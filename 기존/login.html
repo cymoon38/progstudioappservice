@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>그림 커뮤니티 - 로그인</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <img src="logo.png" alt="그림 커뮤니티" class="login-logo">
+            <h1>그림 커뮤니티</h1>
+            
+            <div class="tab-buttons">
+                <button class="tab-btn active" id="loginTab">로그인</button>
+                <button class="tab-btn" id="signupTab">회원가입</button>
+            </div>
+
+            <!-- 로그인 폼 -->
+            <form id="loginForm" class="auth-form active" autocomplete="off">
+                <div class="form-group">
+                    <label for="loginEmail">이메일</label>
+                    <input type="email" id="loginEmail" name="loginEmail" placeholder="이메일을 입력하세요" autocomplete="off" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">비밀번호</label>
+                    <input type="password" id="loginPassword" name="loginPassword" placeholder="비밀번호를 입력하세요" autocomplete="new-password" required>
+                </div>
+                <button type="submit" class="btn-primary" style="width: 100%;">로그인</button>
+                <div id="loginError" class="error-message" style="display: none;"></div>
+            </form>
+
+            <!-- 회원가입 폼 -->
+            <form id="signupForm" class="auth-form" autocomplete="off">
+                <div class="form-group">
+                    <label for="signupName">닉네임 <span class="required">*</span></label>
+                    <input type="text" id="signupName" name="signupName" placeholder="닉네임을 입력하세요" autocomplete="off" required>
+                </div>
+                <div class="form-group">
+                    <label for="signupEmail">이메일 <span class="required">*</span></label>
+                    <input type="email" id="signupEmail" name="signupEmail" placeholder="이메일을 입력하세요" autocomplete="off" required>
+                </div>
+                <div class="form-group">
+                    <label for="signupPassword">비밀번호 <span class="required">*</span></label>
+                    <input type="password" id="signupPassword" name="signupPassword" placeholder="비밀번호를 입력하세요 (최소 6자)" autocomplete="new-password" required minlength="6">
+                </div>
+                <div class="form-group">
+                    <label for="signupPasswordConfirm">비밀번호 확인 <span class="required">*</span></label>
+                    <input type="password" id="signupPasswordConfirm" name="signupPasswordConfirm" placeholder="비밀번호를 다시 입력하세요" autocomplete="new-password" required minlength="6">
+                </div>
+                <button type="submit" class="btn-primary" style="width: 100%;">회원가입</button>
+                <div id="signupError" class="error-message" style="display: none;"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    
+    <script src="firebase-config.js"></script>
+    <script src="data.js"></script>
+    <script src="auth.js"></script>
+</body>
+</html>
+

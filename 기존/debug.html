@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>디버그 정보</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .debug-section {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: inline-block;
+            margin: 5px 0;
+        }
+        .success { background: #4CAF50; color: white; }
+        .error { background: #f44336; color: white; }
+        .warning { background: #ff9800; color: white; }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 디버그 정보</h1>
+    
+    <div class="debug-section">
+        <h2>기본 정보</h2>
+        <p><strong>User Agent:</strong> <span id="userAgent"></span></p>
+        <p><strong>URL:</strong> <span id="currentUrl"></span></p>
+        <p><strong>화면 크기:</strong> <span id="screenSize"></span></p>
+    </div>
+    
+    <div class="debug-section">
+        <h2>Firebase 상태</h2>
+        <p>Firebase SDK: <span id="firebaseStatus"></span></p>
+        <p>Firebase 초기화: <span id="firebaseInitStatus"></span></p>
+        <p>Firestore: <span id="firestoreStatus"></span></p>
+        <p>Storage: <span id="storageStatus"></span></p>
+        <p>Auth: <span id="authStatus"></span></p>
+    </div>
+    
+    <div class="debug-section">
+        <h2>스크립트 로드 상태</h2>
+        <div id="scriptStatus"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>오류 로그</h2>
+        <button onclick="clearErrors()">오류 로그 지우기</button>
+        <div id="errorLog"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h2>테스트</h2>
+        <button onclick="testFirebase()">Firebase 연결 테스트</button>
+        <button onclick="testRouter()">라우터 테스트</button>
+        <div id="testResults"></div>
+    </div>
+    
+    <script>
+        // 기본 정보 표시
+        document.getElementById('userAgent').textContent = navigator.userAgent;
+        document.getElementById('currentUrl').textContent = window.location.href;
+        document.getElementById('screenSize').textContent = `${window.innerWidth}x${window.innerHeight}`;
+        
+        // Firebase 상태 확인
+        function checkFirebase() {
+            const firebaseStatus = document.getElementById('firebaseStatus');
+            const firebaseInitStatus = document.getElementById('firebaseInitStatus');
+            const firestoreStatus = document.getElementById('firestoreStatus');
+            const storageStatus = document.getElementById('storageStatus');
+            const authStatus = document.getElementById('authStatus');
+            
+            if (typeof firebase !== 'undefined') {
+                firebaseStatus.innerHTML = '<span class="status success">로드됨</span>';
+                
+                if (firebase.apps && firebase.apps.length > 0) {
+                    firebaseInitStatus.innerHTML = '<span class="status success">초기화됨</span>';
+                } else {
+                    firebaseInitStatus.innerHTML = '<span class="status error">초기화 안됨</span>';
+                }
+                
+                if (typeof db !== 'undefined' && db) {
+                    firestoreStatus.innerHTML = '<span class="status success">사용 가능</span>';
+                } else {
+                    firestoreStatus.innerHTML = '<span class="status error">사용 불가</span>';
+                }
+                
+                if (typeof storage !== 'undefined' && storage) {
+                    storageStatus.innerHTML = '<span class="status success">사용 가능</span>';
+                } else {
+                    storageStatus.innerHTML = '<span class="status error">사용 불가</span>';
+                }
+                
+                if (typeof firebaseAuth !== 'undefined' && firebaseAuth) {
+                    authStatus.innerHTML = '<span class="status success">사용 가능</span>';
+                } else {
+                    authStatus.innerHTML = '<span class="status error">사용 불가</span>';
+                }
+            } else {
+                firebaseStatus.innerHTML = '<span class="status error">로드 안됨</span>';
+                firebaseInitStatus.innerHTML = '<span class="status error">확인 불가</span>';
+                firestoreStatus.innerHTML = '<span class="status error">확인 불가</span>';
+                storageStatus.innerHTML = '<span class="status error">확인 불가</span>';
+                authStatus.innerHTML = '<span class="status error">확인 불가</span>';
+            }
+        }
+        
+        // 스크립트 로드 상태 확인
+        function checkScripts() {
+            const scripts = ['firebase-config.js', 'storage.js', 'data.js', 'auth.js', 'app.js', 'router.js'];
+            const scriptStatus = document.getElementById('scriptStatus');
+            let html = '';
+            
+            scripts.forEach(script => {
+                const scriptElement = Array.from(document.scripts).find(s => s.src.includes(script));
+                if (scriptElement) {
+                    html += `<p>${script}: <span class="status success">로드됨</span></p>`;
+                } else {
+                    html += `<p>${script}: <span class="status error">로드 안됨</span></p>`;
+                }
+            });
+            
+            scriptStatus.innerHTML = html;
+        }
+        
+        // 오류 로그 수집
+        const errors = [];
+        window.addEventListener('error', function(e) {
+            errors.push({
+                message: e.message,
+                source: e.filename,
+                line: e.lineno,
+                col: e.colno,
+                error: e.error
+            });
+            updateErrorLog();
+        });
+        
+        window.addEventListener('unhandledrejection', function(e) {
+            errors.push({
+                message: 'Promise rejection: ' + e.reason,
+                source: 'unhandledrejection',
+                error: e.reason
+            });
+            updateErrorLog();
+        });
+        
+        function updateErrorLog() {
+            const errorLog = document.getElementById('errorLog');
+            if (errors.length === 0) {
+                errorLog.innerHTML = '<p>오류 없음</p>';
+            } else {
+                let html = '<pre>';
+                errors.forEach((err, index) => {
+                    html += `[${index + 1}] ${err.message}\n`;
+                    if (err.source) html += `위치: ${err.source}:${err.line || '?'}\n`;
+                    if (err.error && err.error.stack) html += `스택: ${err.error.stack}\n`;
+                    html += '\n';
+                });
+                html += '</pre>';
+                errorLog.innerHTML = html;
+            }
+        }
+        
+        function clearErrors() {
+            errors.length = 0;
+            updateErrorLog();
+        }
+        
+        // 테스트 함수
+        async function testFirebase() {
+            const testResults = document.getElementById('testResults');
+            testResults.innerHTML = '<p>테스트 중...</p>';
+            
+            try {
+                if (!db) {
+                    testResults.innerHTML = '<p class="status error">Firestore가 초기화되지 않았습니다.</p>';
+                    return;
+                }
+                
+                // 간단한 읽기 테스트
+                const testRef = db.collection('users').limit(1);
+                await testRef.get();
+                testResults.innerHTML = '<p class="status success">Firebase 연결 성공!</p>';
+            } catch (error) {
+                testResults.innerHTML = `<p class="status error">Firebase 연결 실패: ${error.message}</p>`;
+            }
+        }
+        
+        function testRouter() {
+            const testResults = document.getElementById('testResults');
+            if (window.router) {
+                testResults.innerHTML = '<p class="status success">라우터가 로드되었습니다.</p>';
+            } else {
+                testResults.innerHTML = '<p class="status error">라우터가 로드되지 않았습니다.</p>';
+            }
+        }
+        
+        // 주기적으로 상태 업데이트
+        setInterval(() => {
+            checkFirebase();
+            checkScripts();
+        }, 1000);
+        
+        // 초기 실행
+        checkFirebase();
+        checkScripts();
+        updateErrorLog();
+    </script>
+    
+    <!-- Firebase SDK 로드 -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="storage.js"></script>
+    <script src="data.js"></script>
+    <script src="auth.js"></script>
+    <script src="app.js"></script>
+    <script src="router.js"></script>
+</body>
+</html>
+
+
+

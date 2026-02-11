@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>마이페이지 - 그림 커뮤니티</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-left">
+                <a href="index.html" class="logo-link">
+                    <img src="logo.png" alt="그림 커뮤니티" class="logo">
+                </a>
+                <a href="index.html" class="nav-feed">피드</a>
+                <a href="popular.html" class="nav-feed">인기작품</a>
+                <a href="mission.html" class="nav-feed">미션</a>
+                <a href="shop.html" class="nav-feed">상점</a>
+            </div>
+            <div class="nav-right">
+                <div class="points-display" id="pointsDisplay" style="display: none;">
+                    <div class="point-item coin-item-clickable" id="coinItem" style="cursor: pointer;">
+                        <div class="point-icon point-icon-yellow">
+                            <span>C</span>
+                        </div>
+                        <span class="point-value" id="coinsValue">0</span>
+                    </div>
+                </div>
+                <div class="search-container">
+                    <input type="text" id="searchInput" placeholder="작품 검색" class="search-input" autocomplete="off">
+                    <button id="searchBtn" class="search-btn">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="notification-icon-wrapper" id="notificationWrapper" style="display: none;">
+                    <div class="notification-icon" id="notificationIcon">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                        </svg>
+                    </div>
+                    <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+                </div>
+                <div class="profile-dropdown" id="profileDropdown">
+                    <div class="profile-icon" id="profileIcon">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                        </svg>
+                    </div>
+                    <div class="dropdown-menu" id="dropdownMenu">
+                        <a href="profile.html" id="profileLink">마이페이지</a>
+                        <a href="#" id="logoutBtn">로그아웃</a>
+                    </div>
+                </div>
+                <a href="login.html" id="loginLink" class="nav-login">로그인</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="profile-header">
+            <div class="profile-info">
+                <div class="profile-avatar" id="profileAvatar">
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                    </svg>
+                </div>
+                <div>
+                    <h2 id="profileName">사용자</h2>
+                    <p id="profileEmail"></p>
+                    <p class="post-count">작품 수: <span id="postCount">0</span>개</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="profile-gallery">
+            <div class="gallery-header">
+                <h3>내 작품</h3>
+                <div class="sort-controls">
+                    <label for="sortSelect">정렬:</label>
+                    <select id="sortSelect" class="sort-select">
+                        <option value="newest">최신순</option>
+                        <option value="oldest">오래된순</option>
+                        <option value="popular">인기순</option>
+                    </select>
+                </div>
+            </div>
+            <div class="gallery-grid" id="galleryGrid">
+                <!-- 내 작품들이 여기에 동적으로 로드됩니다 -->
+            </div>
+            <div id="pagination" class="pagination" style="display: none; margin-top: 2rem; text-align: center; gap: 0.5rem;">
+                <button id="prevPageBtn" class="pagination-btn" style="display: none;">이전</button>
+                <span id="pageInfo" style="margin: 0 1rem; font-weight: 600; color: #333;"></span>
+                <button id="nextPageBtn" class="pagination-btn" style="display: none;">다음</button>
+            </div>
+            <div id="noPosts" class="no-posts">
+                <p>아직 업로드한 작품이 없습니다.</p>
+                <a href="index.html" class="btn-primary" style="display: inline-block; margin-top: 1rem;" onclick="if(window.router && window.router.navigate) { event.preventDefault(); window.router.navigate('index'); }">작품 업로드하기</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 알림 모달 -->
+    <div id="notificationModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close" id="notificationClose">&times;</span>
+            <h2>알림</h2>
+            <div id="notificationList" class="notification-list">
+                <!-- 알림 목록이 여기에 동적으로 로드됩니다 -->
+            </div>
+            <div id="noNotifications" class="no-notifications" style="display: none;">
+                <p>알림이 없습니다.</p>
+            </div>
+            <div class="notification-actions" style="margin-top: 1rem; text-align: right;">
+                <button id="markAllReadBtn" class="btn-secondary" style="display: none;">모두 읽음 처리</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    
+    <script src="firebase-config.js"></script>
+    <script src="storage.js"></script>
+    <script src="data.js"></script>
+    <script src="auth.js"></script>
+    <script src="app.js"></script>
+    <script src="router.js"></script>
+    <script>
+        // currentUser는 app.js에서 이미 선언되어 있으므로 여기서는 사용만 함
+        let userPosts = [];
+        let currentPage = 1;
+        const postsPerPage = 5;
+
+        // 네비게이션 업데이트는 app.js의 전역 함수 사용
+
+        // 프로필 드롭다운 설정
+        function setupProfileDropdown() {
+            const profileIcon = document.getElementById('profileIcon');
+            const dropdownMenu = document.getElementById('dropdownMenu');
+            const logoutBtn = document.getElementById('logoutBtn');
+            
+            if (profileIcon && dropdownMenu) {
+                profileIcon.onclick = function(e) {
+                    e.stopPropagation();
+                    const isVisible = dropdownMenu.style.display === 'block';
+                    dropdownMenu.style.display = isVisible ? 'none' : 'block';
+                };
+                
+                document.onclick = function(e) {
+                    const profileDropdown = document.getElementById('profileDropdown');
+                    if (profileDropdown && !profileDropdown.contains(e.target)) {
+                        dropdownMenu.style.display = 'none';
+                    }
+                };
+            }
+
+            if (logoutBtn) {
+                logoutBtn.onclick = async function(e) {
+                    e.preventDefault();
+                    if (confirm('로그아웃하시겠습니까?')) {
+                        try {
+                            if (firebaseAuth) {
+                                await firebaseAuth.signOut();
+                            }
+                            if (window.router && window.router.navigate) {
+                                window.router.navigate('index');
+                            } else {
+                                window.location.href = 'index.html';
+                            }
+                        } catch (error) {
+                            console.error('로그아웃 오류:', error);
+                        }
+                    }
+                };
+            }
+        }
+
+        // 프로필 로드 (전역 함수로 노출 - 라우터에서 호출)
+        window.loadProfile = async function() {
+            try {
+                // Firebase 초기화 대기
+                if (typeof waitForFirebase === 'function') {
+                    await waitForFirebase();
+                } else {
+                    let attempts = 0;
+                    while ((!db || !firebaseAuth) && attempts < 50) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        attempts++;
+                    }
+                }
+                
+                // 현재 사용자 확인 (여러 소스에서 확인)
+                let user = null;
+                
+                // 1. app.js의 전역 currentUser 확인
+                if (typeof currentUser !== 'undefined' && currentUser) {
+                    user = currentUser;
+                }
+                
+                // 2. firebaseAuth.currentUser 확인
+                if (!user && firebaseAuth) {
+                    user = firebaseAuth.currentUser;
+                }
+                
+                // 3. authManager 확인
+                if (!user && window.authManager) {
+                    try {
+                        if (window.authManager.isLoggedIn()) {
+                            user = await window.authManager.getCurrentUserAsync();
+                        }
+                    } catch (e) {
+                        console.warn('authManager에서 사용자 가져오기 실패:', e);
+                    }
+                }
+                
+                // 4. onAuthStateChanged로 사용자 상태 대기 (최대 2초)
+                if (!user && firebaseAuth) {
+                    user = await new Promise((resolve) => {
+                        let resolved = false;
+                        const timeout = setTimeout(() => {
+                            if (!resolved) {
+                                resolved = true;
+                                resolve(null);
+                            }
+                        }, 2000);
+                        
+                        const unsubscribe = firebaseAuth.onAuthStateChanged((authUser) => {
+                            if (!resolved) {
+                                resolved = true;
+                                clearTimeout(timeout);
+                                unsubscribe();
+                                resolve(authUser);
+                            }
+                        });
+                    });
+                }
+                
+                if (!user) {
+                    // 로그인하지 않은 경우 - index로 이동
+                    if (window.router && window.router.navigate) {
+                        window.router.navigate('index');
+                    } else {
+                        window.location.href = 'login.html';
+                    }
+                    return;
+                }
+                
+                currentUser = user;
+                window.currentUser = user;
+                
+                // 네비게이션 업데이트 (이미 같은 사용자면 건너뛰기)
+                if (window.updateNavigation) {
+                    // 현재 네비게이션 상태 확인
+                    const profileDropdown = document.getElementById('profileDropdown');
+                    const notificationWrapper = document.getElementById('notificationWrapper');
+                    const pointsDisplay = document.getElementById('pointsDisplay');
+                    
+                    // 이미 올바르게 표시되어 있으면 업데이트하지 않음
+                    const isAlreadyCorrect = profileDropdown && 
+                                            profileDropdown.style.display === 'block' &&
+                                            notificationWrapper &&
+                                            notificationWrapper.style.display === 'block' &&
+                                            pointsDisplay &&
+                                            pointsDisplay.style.display === 'flex';
+                    
+                    if (!isAlreadyCorrect) {
+                        window.updateNavigation(user);
+                    }
+                }
+
+                // 사용자 정보 가져오기 (Firestore에서) - 확실하게 가져오기
+                let userInfo = null;
+                if (db && currentUser.uid) {
+                    try {
+                        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+                        if (userDoc.exists) {
+                            userInfo = userDoc.data();
+                            console.log('✅ Firestore에서 사용자 정보 가져옴:', userInfo);
+                        } else {
+                            console.warn('⚠️ Firestore에 사용자 정보가 없습니다. 생성 중...');
+                            // 사용자 정보가 없으면 기본 정보로 생성
+                            const fallbackName = currentUser.displayName || currentUser.email.split('@')[0];
+                            await db.collection('users').doc(currentUser.uid).set({
+                                name: fallbackName,
+                                email: currentUser.email,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                postCount: 0
+                            }, { merge: true });
+                            userInfo = { name: fallbackName, email: currentUser.email };
+                        }
+                    } catch (error) {
+                        console.error('사용자 정보 가져오기 오류:', error);
+                    }
+                }
+                
+                // 프로필 정보 표시 (회원가입 시 입력한 닉네임 우선 사용)
+                let displayName = '사용자'; // 기본값
+                
+                if (userInfo && userInfo.name) {
+                    displayName = userInfo.name.trim();
+                    console.log('✅ 프로필 이름 설정:', displayName, '(Firestore에서)');
+                } else if (currentUser.username) {
+                    displayName = currentUser.username.trim();
+                    console.log('✅ 프로필 이름 설정:', displayName, '(currentUser.username)');
+                } else if (currentUser.displayName) {
+                    displayName = currentUser.displayName.trim();
+                    console.log('✅ 프로필 이름 설정:', displayName, '(currentUser.displayName)');
+                } else if (currentUser.email) {
+                    displayName = currentUser.email.split('@')[0].trim();
+                    console.log('✅ 프로필 이름 설정:', displayName, '(이메일에서 추출)');
+                }
+                
+                document.getElementById('profileName').textContent = displayName;
+                document.getElementById('profileEmail').textContent = currentUser.email || '';
+                
+                // 작품 수 표시
+                if (userInfo) {
+                    document.getElementById('postCount').textContent = userInfo.postCount || 0;
+                }
+
+                // 내 작품 로드
+                await loadUserPosts();
+            } catch (error) {
+                console.error('프로필 로드 오류:', error);
+                if (window.router && window.router.navigate) {
+                    window.router.navigate('index');
+                } else {
+                    window.location.href = 'login.html';
+                }
+            }
+        };
+        
+        // 내부 함수로도 유지 (initPage에서 사용)
+        async function loadProfile() {
+            return await window.loadProfile();
+        }
+
+        // 사용자 게시물 로드
+        async function loadUserPosts() {
+            const galleryGrid = document.getElementById('galleryGrid');
+            const noPosts = document.getElementById('noPosts');
+            
+            if (!galleryGrid) return;
+
+            try {
+                // 사용자 정보 가져오기 (Firestore에서)
+                let userInfo = null;
+                if (db && currentUser && currentUser.uid) {
+                    try {
+                        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+                        if (userDoc.exists) {
+                            userInfo = userDoc.data();
+                        }
+                    } catch (error) {
+                        console.error('사용자 정보 가져오기 오류:', error);
+                    }
+                }
+                
+                // 사용자 이름 가져오기 (Firestore의 name 필드 우선, 공백 제거)
+                let username = null;
+                if (userInfo && userInfo.name) {
+                    username = userInfo.name.trim();
+                } else if (currentUser.username) {
+                    username = currentUser.username.trim();
+                } else if (currentUser.displayName) {
+                    username = currentUser.displayName.trim();
+                } else if (currentUser.email) {
+                    username = currentUser.email.split('@')[0].trim();
+                }
+                
+                if (!username) {
+                    console.error('❌ 사용자 이름을 찾을 수 없습니다.', {
+                        userInfo: userInfo,
+                        currentUser: currentUser
+                    });
+                    galleryGrid.innerHTML = '<p style="text-align: center; padding: 2rem;">사용자 정보를 불러올 수 없습니다.</p>';
+                    return;
+                }
+                
+                console.log('✅ 사용자 게시물 로드 시작');
+                console.log('📋 사용자 정보:', {
+                    username: username,
+                    uid: currentUser.uid,
+                    email: currentUser.email,
+                    displayName: currentUser.displayName,
+                    userInfo: userInfo
+                });
+                
+                // 모든 가능한 이름 변형으로도 시도 (디버깅용)
+                const possibleUsernames = [username];
+                if (userInfo && userInfo.name) possibleUsernames.push(userInfo.name);
+                if (currentUser.username) possibleUsernames.push(currentUser.username);
+                if (currentUser.displayName) possibleUsernames.push(currentUser.displayName);
+                if (currentUser.email) possibleUsernames.push(currentUser.email.split('@')[0]);
+                console.log('🔍 시도할 사용자 이름 목록:', [...new Set(possibleUsernames.map(n => n && n.trim()).filter(n => n))]);
+                
+                // 데이터 매니저가 준비될 때까지 대기
+                if (!window.dataManager) {
+                    console.log('⏳ dataManager 대기 중...');
+                    await new Promise(resolve => {
+                        let attempts = 0;
+                        const checkInterval = setInterval(() => {
+                            attempts++;
+                            if (window.dataManager) {
+                                clearInterval(checkInterval);
+                                console.log('✅ dataManager 준비 완료');
+                                resolve();
+                            } else if (attempts >= 50) {
+                                clearInterval(checkInterval);
+                                console.warn('⚠️ dataManager 준비 시간 초과');
+                                resolve();
+                            }
+                        }, 100);
+                    });
+                }
+                
+                if (!window.dataManager) {
+                    console.error('❌ dataManager를 사용할 수 없습니다.');
+                    galleryGrid.innerHTML = '<p style="text-align: center; padding: 2rem; color: red;">데이터 매니저를 초기화할 수 없습니다. 페이지를 새로고침해주세요.</p>';
+                    return;
+                }
+                
+                console.log('🔍 getUserPosts 호출 - 사용자 이름:', username);
+                console.log('🔍 사용자 이름 길이:', username.length);
+                console.log('🔍 사용자 이름 (JSON):', JSON.stringify(username));
+                
+                userPosts = await window.dataManager.getUserPosts(username);
+                console.log('✅ 로드된 게시물 개수:', userPosts.length);
+                
+                if (userPosts.length > 0) {
+                    console.log('✅ 게시물 로드 성공!');
+                    console.log('📋 게시물 상세:', userPosts.map(p => ({
+                        id: p.id,
+                        author: p.author,
+                        title: p.title
+                    })));
+                } else {
+                    console.warn('⚠️ 게시물이 없습니다. 다음을 확인하세요:');
+                    console.warn('1. Firebase Console > Firestore > posts 컬렉션에서 게시물 확인');
+                    console.warn('2. 게시물의 author 필드가 "' + username + '"와 정확히 일치하는지 확인');
+                    console.warn('3. author 필드에 공백이나 특수문자가 없는지 확인');
+                    console.warn('4. Firestore 보안 규칙이 읽기를 허용하는지 확인');
+                    
+                    // 추가 디버깅: 모든 게시물 조회
+                    try {
+                        if (db) {
+                            const allPosts = await db.collection('posts').limit(5).get();
+                            const debugPosts = [];
+                            allPosts.forEach(doc => {
+                                const data = doc.data();
+                                debugPosts.push({
+                                    id: doc.id,
+                                    author: data.author,
+                                    authorType: typeof data.author,
+                                    title: data.title
+                                });
+                            });
+                            console.log('🔍 디버깅: Firestore의 샘플 게시물:', debugPosts);
+                        }
+                    } catch (error) {
+                        console.error('디버깅 쿼리 오류:', error);
+                    }
+                }
+
+                // 게시물 수 업데이트
+                const postCountElement = document.getElementById('postCount');
+                if (postCountElement) {
+                    postCountElement.textContent = userPosts.length;
+                }
+
+                // 정렬 선택 요소 가져오기
+                const sortSelect = document.getElementById('sortSelect');
+                const sortType = sortSelect ? sortSelect.value : 'newest';
+                
+                // 정렬된 게시물 표시
+                displaySortedPosts(userPosts, sortType);
+                
+                console.log('✅ 게시물 카드 생성 완료');
+            } catch (error) {
+                console.error('게시물 로드 오류:', error);
+                galleryGrid.innerHTML = '<p style="text-align: center; padding: 2rem;">게시물을 불러오는 중 오류가 발생했습니다.</p>';
+            }
+        }
+
+        // 프로필 갤러리 아이템 생성 (갤러리 스타일)
+        function createProfilePostCard(post) {
+            const galleryItemWrapper = document.createElement('div');
+            galleryItemWrapper.className = 'gallery-item-wrapper';
+            
+            const likesCount = post.likes ? post.likes.length : 0;
+            const commentsCount = post.comments ? post.comments.length : 0;
+            const isPopular = likesCount >= 2; // 추천수 2 이상이면 인기 작품
+            
+            // 압축된 이미지 우선 사용 (비용 절감)
+            // post.image는 압축된 이미지 URL이며, 기존 게시물의 경우 원본일 수 있음
+            // 압축된 이미지가 있으면 우선 사용, 없으면 기존 image 사용 (하위 호환성)
+            const imageUrl = post.compressedImageUrl || post.image;
+            
+            galleryItemWrapper.innerHTML = `
+                ${isPopular ? '<div class="gallery-crown-icon"><img src="crown.png" alt="인기작품" class="crown-image"></div>' : ''}
+                <img src="${imageUrl}" alt="${post.title || '그림'}" class="gallery-item" onclick="if(window.router && window.router.navigate) { window.router.navigate('post-detail', {id: '${post.id}'}); } else { window.location.href='post-detail.html?id=${post.id}'; }">
+            `;
+            
+            return galleryItemWrapper;
+        }
+
+        // 정렬 함수
+        function sortPosts(posts, sortType) {
+            const sortedPosts = [...posts]; // 배열 복사
+            
+            switch(sortType) {
+                case 'newest':
+                    sortedPosts.sort((a, b) => {
+                        const dateA = a.date ? (a.date.toDate ? a.date.toDate() : new Date(a.date)) : new Date(0);
+                        const dateB = b.date ? (b.date.toDate ? b.date.toDate() : new Date(b.date)) : new Date(0);
+                        return dateB - dateA; // 최신순 (내림차순)
+                    });
+                    break;
+                case 'oldest':
+                    sortedPosts.sort((a, b) => {
+                        const dateA = a.date ? (a.date.toDate ? a.date.toDate() : new Date(a.date)) : new Date(0);
+                        const dateB = b.date ? (b.date.toDate ? b.date.toDate() : new Date(b.date)) : new Date(0);
+                        return dateA - dateB; // 오래된순 (오름차순)
+                    });
+                    break;
+                case 'popular':
+                    sortedPosts.sort((a, b) => {
+                        const likesA = a.likes ? a.likes.length : 0;
+                        const likesB = b.likes ? b.likes.length : 0;
+                        if (likesB !== likesA) {
+                            return likesB - likesA; // 인기순 (좋아요 많은 순)
+                        }
+                        // 좋아요 수가 같으면 최신순
+                        const dateA = a.date ? (a.date.toDate ? a.date.toDate() : new Date(a.date)) : new Date(0);
+                        const dateB = b.date ? (b.date.toDate ? b.date.toDate() : new Date(b.date)) : new Date(0);
+                        return dateB - dateA;
+                    });
+                    break;
+            }
+            
+            return sortedPosts;
+        }
+
+        // 정렬된 게시물 표시 (페이지네이션 적용)
+        function displaySortedPosts(posts, sortType) {
+            const galleryGrid = document.getElementById('galleryGrid');
+            const noPosts = document.getElementById('noPosts');
+            const pagination = document.getElementById('pagination');
+            const prevPageBtn = document.getElementById('prevPageBtn');
+            const nextPageBtn = document.getElementById('nextPageBtn');
+            const pageInfo = document.getElementById('pageInfo');
+            
+            if (!galleryGrid) return;
+            
+            if (posts.length === 0) {
+                galleryGrid.style.display = 'none';
+                if (pagination) pagination.style.display = 'none';
+                if (noPosts) noPosts.style.display = 'block';
+                return;
+            }
+            
+            const sortedPosts = sortPosts(posts, sortType);
+            const totalPages = Math.ceil(sortedPosts.length / postsPerPage);
+            
+            // 현재 페이지가 범위를 벗어나면 첫 페이지로 리셋
+            if (currentPage > totalPages) {
+                currentPage = 1;
+            }
+            
+            // 현재 페이지의 게시물만 가져오기
+            const startIndex = (currentPage - 1) * postsPerPage;
+            const endIndex = startIndex + postsPerPage;
+            const currentPagePosts = sortedPosts.slice(startIndex, endIndex);
+            
+            galleryGrid.style.display = 'grid';
+            if (noPosts) noPosts.style.display = 'none';
+            galleryGrid.innerHTML = '';
+            
+            currentPagePosts.forEach((post) => {
+                const postCard = createProfilePostCard(post);
+                galleryGrid.appendChild(postCard);
+            });
+            
+            // 페이지네이션 UI 업데이트
+            if (totalPages > 1) {
+                if (pagination) pagination.style.display = 'flex';
+                if (pageInfo) {
+                    pageInfo.textContent = `${currentPage} / ${totalPages}`;
+                }
+                if (prevPageBtn) {
+                    prevPageBtn.style.display = currentPage > 1 ? 'inline-block' : 'none';
+                }
+                if (nextPageBtn) {
+                    nextPageBtn.style.display = currentPage < totalPages ? 'inline-block' : 'none';
+                }
+            } else {
+                if (pagination) pagination.style.display = 'none';
+            }
+        }
+        
+        // 이전 페이지
+        function goToPrevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                const sortSelect = document.getElementById('sortSelect');
+                const sortType = sortSelect ? sortSelect.value : 'newest';
+                displaySortedPosts(userPosts, sortType);
+                // 페이지 상단으로 스크롤
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+        
+        // 다음 페이지
+        function goToNextPage() {
+            const totalPages = Math.ceil(userPosts.length / postsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                const sortSelect = document.getElementById('sortSelect');
+                const sortType = sortSelect ? sortSelect.value : 'newest';
+                displaySortedPosts(userPosts, sortType);
+                // 페이지 상단으로 스크롤
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        // 게시물 삭제
+        async function deletePost(postId) {
+            if (!confirm('정말 삭제하시겠습니까?')) {
+                return;
+            }
+
+            try {
+                await window.dataManager.deletePost(postId);
+                await loadUserPosts();
+            } catch (error) {
+                console.error('게시물 삭제 오류:', error);
+                alert('게시물 삭제 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+        
+        // 전역 함수로 내보내기
+        window.deletePost = deletePost;
+
+        // 정렬 변경 이벤트 리스너
+        document.addEventListener('DOMContentLoaded', function() {
+            const sortSelect = document.getElementById('sortSelect');
+            if (sortSelect) {
+                sortSelect.addEventListener('change', function() {
+                    if (userPosts && userPosts.length > 0) {
+                        currentPage = 1; // 정렬 변경 시 첫 페이지로 리셋
+                        displaySortedPosts(userPosts, this.value);
+                    }
+                });
+            }
+            
+            // 페이지네이션 버튼 이벤트 리스너
+            const prevPageBtn = document.getElementById('prevPageBtn');
+            const nextPageBtn = document.getElementById('nextPageBtn');
+            
+            if (prevPageBtn) {
+                prevPageBtn.addEventListener('click', goToPrevPage);
+            }
+            if (nextPageBtn) {
+                nextPageBtn.addEventListener('click', goToNextPage);
+            }
+        });
+
+        // Firebase 초기화 대기
+        async function waitForAuthManager() {
+            return new Promise((resolve) => {
+                let attempts = 0;
+                const maxAttempts = 50; // 5초 대기
+                const checkInterval = setInterval(() => {
+                    attempts++;
+                    if (window.authManager && window.dataManager && db) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(checkInterval);
+                        console.warn('⚠️ Firebase 초기화 대기 시간 초과');
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+
+        // 알림 설정 함수 (app.js의 함수 사용)
+        function setupNotifications(userId) {
+            const notificationIcon = document.getElementById('notificationIcon');
+            const notificationBadge = document.getElementById('notificationBadge');
+            const notificationModal = document.getElementById('notificationModal');
+            const notificationClose = document.getElementById('notificationClose');
+            const notificationList = document.getElementById('notificationList');
+            const noNotifications = document.getElementById('noNotifications');
+            const markAllReadBtn = document.getElementById('markAllReadBtn');
+            
+            if (!notificationIcon || !userId) return;
+            
+            // 알림 아이콘 클릭 시 모달 열기
+            notificationIcon.onclick = function() {
+                if (notificationModal) {
+                    notificationModal.style.display = 'block';
+                    loadNotifications(userId);
+                }
+            };
+            
+            // 모달 닫기
+            if (notificationClose) {
+                notificationClose.onclick = function() {
+                    if (notificationModal) {
+                        notificationModal.style.display = 'none';
+                    }
+                };
+            }
+            
+            // 모달 외부 클릭 시 닫기
+            if (notificationModal) {
+                window.onclick = function(e) {
+                    if (e.target === notificationModal) {
+                        notificationModal.style.display = 'none';
+                    }
+                };
+            }
+            
+            // 모두 읽음 처리
+            if (markAllReadBtn) {
+                markAllReadBtn.onclick = async function() {
+                    try {
+                        await window.dataManager.markAllNotificationsAsRead(userId);
+                        await loadNotifications(userId);
+                        await updateNotificationBadge(userId);
+                    } catch (error) {
+                        console.error('모두 읽음 처리 오류:', error);
+                    }
+                };
+            }
+            
+            // 알림 로드 함수
+            async function loadNotifications(uid) {
+                try {
+                    const notifications = await window.dataManager.getUserNotifications(uid);
+                    
+                    if (notifications.length === 0) {
+                        if (notificationList) notificationList.innerHTML = '';
+                        if (noNotifications) noNotifications.style.display = 'block';
+                        if (markAllReadBtn) markAllReadBtn.style.display = 'none';
+                        return;
+                    }
+                    
+                    if (noNotifications) noNotifications.style.display = 'none';
+                    
+                    const unreadCount = notifications.filter(n => !n.read).length;
+                    if (markAllReadBtn) {
+                        markAllReadBtn.style.display = unreadCount > 0 ? 'inline-block' : 'none';
+                    }
+                    
+                    if (notificationList) {
+                        notificationList.innerHTML = '';
+                        notifications.forEach(notification => {
+                            const notificationItem = document.createElement('div');
+                            notificationItem.className = `notification-item ${notification.read ? 'read' : 'unread'}`;
+                            
+                            const typeText = notification.type === 'like' ? '좋아요' : '댓글';
+                            const createdAt = notification.createdAt ? 
+                                (notification.createdAt.toDate ? notification.createdAt.toDate() : new Date(notification.createdAt)) : 
+                                new Date();
+                            const timeAgo = getTimeAgo(createdAt);
+                            
+                            notificationItem.innerHTML = `
+                                <div class="notification-content">
+                                    <div class="notification-text">
+                                        <strong>${notification.author}</strong>님이 "${notification.postTitle}"에 ${typeText}${notification.type === 'comment' ? '을 달았습니다' : '를 눌렀습니다'}
+                                        ${notification.type === 'comment' && notification.commentText ? `<br><span style="color: #666; font-size: 0.9rem;">"${notification.commentText.substring(0, 50)}${notification.commentText.length > 50 ? '...' : ''}"</span>` : ''}
+                                    </div>
+                                    <div class="notification-time">${timeAgo}</div>
+                                </div>
+                            `;
+                            
+                            notificationItem.onclick = async function() {
+                                // 알림 읽음 처리
+                                if (!notification.read) {
+                                    await window.dataManager.markNotificationAsRead(notification.id);
+                                    notificationItem.classList.remove('unread');
+                                    notificationItem.classList.add('read');
+                                    await updateNotificationBadge(uid);
+                                }
+                                
+                                // 게시물 상세 페이지로 이동
+                                if (window.router && window.router.navigate) {
+                                    window.router.navigate('post-detail', { id: notification.postId });
+                                } else {
+                                    window.location.href = `post-detail.html?id=${notification.postId}`;
+                                }
+                            };
+                            
+                            notificationList.appendChild(notificationItem);
+                        });
+                    }
+                } catch (error) {
+                    console.error('알림 로드 오류:', error);
+                }
+            }
+            
+            // 시간 표시 함수
+            function getTimeAgo(date) {
+                const now = new Date();
+                const diff = now - date;
+                const seconds = Math.floor(diff / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                const days = Math.floor(hours / 24);
+                
+                if (days > 0) return `${days}일 전`;
+                if (hours > 0) return `${hours}시간 전`;
+                if (minutes > 0) return `${minutes}분 전`;
+                return '방금 전';
+            }
+            
+            // 알림 배지 업데이트
+            async function updateNotificationBadge(uid) {
+                try {
+                    const count = await window.dataManager.getUnreadNotificationCount(uid);
+                    if (notificationBadge) {
+                        if (count > 0) {
+                            notificationBadge.textContent = count > 99 ? '99+' : count;
+                            notificationBadge.style.display = 'flex';
+                        } else {
+                            notificationBadge.style.display = 'none';
+                        }
+                    }
+                } catch (error) {
+                    console.error('알림 배지 업데이트 오류:', error);
+                }
+            }
+            
+            // 실시간 알림 리스너
+            if (db) {
+                try {
+                    const notificationsRef = db.collection('notifications')
+                        .where('userId', '==', userId)
+                        .where('read', '==', false)
+                        .orderBy('createdAt', 'desc')
+                        .limit(1);
+                    
+                    window.notificationUnsubscribe = notificationsRef.onSnapshot(async (snapshot) => {
+                        await updateNotificationBadge(userId);
+                    }, (error) => {
+                        console.error('알림 리스너 오류:', error);
+                        // orderBy 없이 시도
+                        try {
+                            const fallbackRef = db.collection('notifications')
+                                .where('userId', '==', userId)
+                                .where('read', '==', false);
+                            
+                            window.notificationUnsubscribe = fallbackRef.onSnapshot(async () => {
+                                await updateNotificationBadge(userId);
+                            });
+                        } catch (fallbackError) {
+                            console.error('알림 리스너 fallback 오류:', fallbackError);
+                        }
+                    });
+                } catch (error) {
+                    console.error('알림 리스너 설정 오류:', error);
+                }
+            }
+            
+            // 초기 알림 배지 업데이트
+            updateNotificationBadge(userId);
+        }
+        
+        // 페이지 초기화 (직접 접근한 경우에만 실행)
+        async function initPage() {
+            // 라우터를 사용하는 경우 initPage는 실행하지 않음
+            if (window.router && window.location.pathname !== '/profile.html' && !window.location.href.includes('profile.html')) {
+                return;
+            }
+            
+            try {
+                // Firebase 및 authManager 초기화 대기
+                await waitForAuthManager();
+                
+                if (!window.authManager) {
+                    console.error('❌ authManager를 사용할 수 없습니다.');
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                // 인증 상태 변화 감지 (한 번만 등록)
+                // 라우터를 사용하는 경우 onAuthStateChanged는 app.js에서 이미 처리되므로 중복 등록하지 않음
+                if (!window.router || window.location.pathname === '/profile.html' || window.location.href.includes('profile.html')) {
+                    window.authManager.onAuthStateChanged(async (user) => {
+                        // 이전 알림 리스너 제거
+                        if (window.notificationUnsubscribe) {
+                            window.notificationUnsubscribe();
+                            window.notificationUnsubscribe = null;
+                        }
+                        
+                        // 네비게이션 업데이트 (전역 함수 사용, 이미 업데이트되었으면 건너뛰기)
+                        if (window.updateNavigation) {
+                            const profileDropdown = document.getElementById('profileDropdown');
+                            const notificationWrapper = document.getElementById('notificationWrapper');
+                            const pointsDisplay = document.getElementById('pointsDisplay');
+                            
+                            // 이미 올바르게 표시되어 있으면 업데이트하지 않음
+                            const isAlreadyCorrect = user && profileDropdown && 
+                                                    profileDropdown.style.display === 'block' &&
+                                                    notificationWrapper &&
+                                                    notificationWrapper.style.display === 'block' &&
+                                                    pointsDisplay &&
+                                                    pointsDisplay.style.display === 'flex';
+                            
+                            if (!isAlreadyCorrect) {
+                                window.updateNavigation(user);
+                            }
+                        }
+                        
+                        if (user) {
+                            await loadProfile();
+                        } else {
+                            window.location.href = 'login.html';
+                        }
+                    });
+                } else {
+                    // 라우터를 사용하는 경우 프로필만 로드
+                    const currentUser = firebaseAuth ? firebaseAuth.currentUser : null;
+                    if (currentUser) {
+                        await loadProfile();
+                    }
+                }
+            } catch (error) {
+                console.error('페이지 초기화 오류:', error);
+                window.location.href = 'login.html';
+            }
+        }
+        
+        // 코인 모달 설정 (모바일에서 코인 클릭 기능 활성화)
+        try {
+            if (typeof setupCoinModal === 'function') {
+                setupCoinModal();
+            } else {
+                // app.js가 아직 로드되지 않은 경우 재시도
+                setTimeout(() => {
+                    if (typeof setupCoinModal === 'function') {
+                        setupCoinModal();
+                    }
+                }, 500);
+            }
+        } catch (coinModalError) {
+            console.warn('코인 모달 설정 오류 (무시):', coinModalError);
+        }
+
+        // 페이지 로드 시 초기화
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                initPage();
+                // 라우터 초기화 (모든 스크립트 로드 후)
+                if (window.router) {
+                    window.router.init();
+                }
+            });
+        } else {
+            initPage();
+            // 라우터 초기화 (모든 스크립트 로드 후)
+            if (window.router) {
+                window.router.init();
+            }
+        }
+    </script>
+
+    <!-- 모바일 하단 네비게이션 바 -->
+    <nav class="bottom-nav">
+        <a href="index.html" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+            </svg>
+            <span>홈</span>
+        </a>
+        <a href="popular.html" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+            </svg>
+            <span>인기작품</span>
+        </a>
+        <a href="mission.html" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+            </svg>
+            <span>미션</span>
+        </a>
+        <a href="shop.html" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                <path d="M7 18c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12L8.1 13h7.45c.75 0 1.41-.41 1.75-1.03L21.7 4H5.21l-.94-2H1zm16 16c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+            </svg>
+            <span>상점</span>
+        </a>
+    </nav>
+
+    <!-- 코인 모달 -->
+    <div id="coinModal" class="modal">
+        <div class="modal-content coin-modal-content">
+            <span class="close" id="coinModalClose">&times;</span>
+            <div class="coin-modal-header">
+                <div class="coin-balance-display">
+                    <div class="coin-icon-large">
+                        <span>C</span>
+                    </div>
+                    <div class="coin-balance-info">
+                        <h2>내 코인</h2>
+                        <div class="coin-balance-amount">
+                            <span id="coinModalBalance">0</span>
+                            <span class="coin-unit">코인</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 코인 내역 -->
+            <div class="coin-history-section">
+                <div class="coin-history-list" id="coinHistoryList">
+                    <div class="coin-history-empty">
+                        <p>아직 코인 내역이 없습니다.</p>
+                        <p class="coin-history-hint">미션을 완료하거나 출석체크를 하면 코인을 획득할 수 있습니다.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

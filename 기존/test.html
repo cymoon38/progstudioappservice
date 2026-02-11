@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>서버 테스트</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .success {
+            font-size: 48px;
+            margin: 20px 0;
+        }
+        .info {
+            background: rgba(255,255,255,0.2);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px;
+            max-width: 500px;
+        }
+        .info p {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="success">✅</div>
+    <h1>서버가 정상적으로 작동하고 있습니다!</h1>
+    <div class="info">
+        <p><strong>서버 주소:</strong></p>
+        <p id="serverUrl"></p>
+        <p><strong>접속 시간:</strong></p>
+        <p id="accessTime"></p>
+    </div>
+    <div class="info">
+        <p>이 페이지가 보인다면 서버 연결이 정상입니다.</p>
+        <p><a href="index.html" style="color: white; text-decoration: underline;">메인 페이지로 이동</a></p>
+    </div>
+    
+    <script>
+        document.getElementById('serverUrl').textContent = window.location.href;
+        document.getElementById('accessTime').textContent = new Date().toLocaleString('ko-KR');
+    </script>
+</body>
+</html>
+
+
+
