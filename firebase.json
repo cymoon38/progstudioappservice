@@ -2,14 +2,15 @@
   "firestore": {
     "database": "(default)",
     "location": "nam5",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "rules": "flutter_app/firestore.rules",
+    "indexes": "flutter_app/firestore.indexes.json"
   },
   "functions": [
     {
       "source": "functions",
       "codebase": "default",
       "disallowLegacyRuntimeConfig": true,
+      "predeploy": [],
       "ignore": [
         "node_modules",
         ".git",

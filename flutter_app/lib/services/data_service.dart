@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -3116,6 +3117,139 @@ class DataService extends ChangeNotifier {
       rethrow;
     }
   }
+
+  // =========================
+  // 기프티콘 (Gift Card)
+  // =========================
+
+  // 기프티콘 상품 모델
+  static GiftCard fromGiftCardMap(Map<String, dynamic> data) {
+    // 이미지 URL 우선순위: goodsimg > mmsGoodsimg > goodsImgS > goodsImgB
+    final imageUrl = data['goodsimg'] ?? 
+                     data['mmsGoodsimg'] ?? 
+                     data['goodsImgS'] ?? 
+                     data['goodsImgB'] ?? 
+                     '';
+    
+    debugPrint('🖼️ 이미지 URL 매핑: goodsimg=${data['goodsimg']}, mmsGoodsimg=${data['mmsGoodsimg']}, 최종=$imageUrl');
+    
+    return GiftCard(
+      goodsCode: (data['goodsCode'] ?? '').toString(),
+      goodsName: (data['goodsName'] ?? '').toString(),
+      salePrice: (data['salePrice'] ?? 0) is int 
+          ? (data['salePrice'] ?? 0) 
+          : int.tryParse('${data['salePrice']}') ?? 0,
+      discountPrice: (data['discountPrice'] ?? 0) is int 
+          ? (data['discountPrice'] ?? 0) 
+          : int.tryParse('${data['discountPrice']}') ?? 0,
+      goodsimg: imageUrl.toString(),
+      brandName: (data['brandName'] ?? '').toString(),
+      goodsTypeNm: (data['goodsTypeNm'] ?? '').toString(),
+    );
+  }
+
+  // 기프티콘 목록 조회
+  Future<List<GiftCard>> getGiftCardList({int start = 1, int size = 20}) async {
+    try {
+      debugPrint('🔍 기프티콘 목록 조회 시작...');
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('getGiftCardList');
+      
+      debugPrint('📞 Cloud Function 호출 중...');
+      final result = await callable.call({
+        'start': start,
+        'size': size,
+      });
+
+      debugPrint('✅ Cloud Function 응답 받음: ${result.data}');
+      
+      // 안전한 타입 변환
+      final dynamic responseData = result.data;
+      if (responseData == null) {
+        debugPrint('❌ 응답 데이터가 null입니다.');
+        return [];
+      }
+      
+      // Map으로 변환 (타입 안전하게)
+      final Map<String, dynamic> data = Map<String, dynamic>.from(
+        responseData is Map ? responseData : {}
+      );
+      
+      if (data['success'] == true) {
+        final dynamic goodsListData = data['goodsList'];
+        final List<dynamic> goodsList = goodsListData is List 
+            ? goodsListData 
+            : [];
+        
+        debugPrint('📦 기프티콘 개수: ${goodsList.length}');
+        
+        // 각 항목을 안전하게 변환
+        final List<GiftCard> cards = [];
+        for (final item in goodsList) {
+          try {
+            if (item is Map) {
+              final Map<String, dynamic> itemMap = Map<String, dynamic>.from(item);
+              cards.add(fromGiftCardMap(itemMap));
+            } else {
+              debugPrint('⚠️ 유효하지 않은 상품 데이터 건너뛰기: $item');
+            }
+          } catch (e) {
+            debugPrint('⚠️ 상품 데이터 변환 오류: $e - $item');
+          }
+        }
+        
+        debugPrint('✅ 기프티콘 목록 변환 완료: ${cards.length}개');
+        return cards;
+      } else {
+        debugPrint('❌ 기프티콘 목록 조회 실패: ${data['error']}');
+        debugPrint('📋 전체 응답: $data');
+        return [];
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ 기프티콘 목록 조회 오류: $e');
+      debugPrint('📋 스택 트레이스: $stackTrace');
+      return [];
+    }
+  }
+
+  // Firestore에서 캐시된 기프티콘 목록 조회
+  Future<List<GiftCard>> getCachedGiftCardList({int limit = 50}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('giftcards')
+          .limit(limit)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return fromGiftCardMap(data);
+      }).toList();
+    } catch (e) {
+      debugPrint('캐시된 기프티콘 목록 조회 오류: $e');
+      return [];
+    }
+  }
+}
+
+// 기프티콘 모델
+class GiftCard {
+  final String goodsCode;
+  final String goodsName;
+  final int salePrice;
+  final int discountPrice;
+  final String goodsimg;
+  final String brandName;
+  final String goodsTypeNm;
+
+  GiftCard({
+    required this.goodsCode,
+    required this.goodsName,
+    required this.salePrice,
+    required this.discountPrice,
+    required this.goodsimg,
+    required this.brandName,
+    required this.goodsTypeNm,
+  });
 }
 
 

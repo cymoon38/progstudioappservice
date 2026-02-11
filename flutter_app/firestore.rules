@@ -124,6 +124,15 @@ service cloud.firestore {
            // 수정/삭제: 불가 (추첨 결과는 수정/삭제 불가)
            allow update, delete: if false;
          }
+         
+         // 기프티콘 상품 (giftcards) - 캐시용
+         match /giftcards/{giftcardId} {
+           // 읽기: 모든 사용자 허용 (기프티콘 목록 조회용)
+           allow read: if true;
+           
+           // 생성/수정/삭제: 서버에서만 (Cloud Functions에서만)
+           allow create, update, delete: if false;
+         }
        }
      }
 

@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'feed_screen.dart';
 import 'popular_screen.dart';
 import 'mission_screen.dart';
-import 'profile_screen.dart';
+import 'shop_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_top_navbar.dart';
 import '../../widgets/custom_bottom_navbar.dart';
@@ -24,7 +24,7 @@ class HomeScreenState extends State<HomeScreen> {
     const FeedScreen(),
     const PopularScreen(),
     const MissionScreen(),
-    const ProfileScreen(), // 임시로 프로필 화면 (나중에 상점 화면으로 변경)
+    const ShopScreen(),
   ];
 
   void setCurrentIndex(int index) {

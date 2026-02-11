@@ -1,15 +1,33 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const axios = require('axios');
 
 admin.initializeApp();
 
 const db = admin.firestore();
 
+// 기프트쇼비즈 API 설정
+const GIFTSHOWBIZ_BASE_URL = 'https://bizapi.giftishow.com/bizApi';
+
+// 환경 변수에서 Secret 가져오기
+// Firebase Console > Functions > 설정 > 환경 변수에서 설정
+function getSecret(secretName) {
+  // 상용환경 키 사용 (나중에 환경 변수로 변경)
+  if (secretName === 'GIFTSHOWBIZ_AUTH_CODE') {
+    return 'REAL56bf67edd37e4733af8ddba2d5387150';
+  }
+  if (secretName === 'GIFTSHOWBIZ_AUTH_TOKEN') {
+    return '3RXSN9gtle+bE63cH3vnSg==';
+  }
+  // 환경 변수에서 가져오기 (배포 시 설정)
+  return process.env[secretName] || '';
+}
+
 // 오늘 날짜를 YYYY-MM-DD 형식으로 반환 (한국 시간 기준)
 function getTodayDateString() {
   // 한국 시간(UTC+9)으로 현재 날짜 계산
   const now = new Date();
-  const koreaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const koreaTime = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
   const year = koreaTime.getFullYear();
   const month = String(koreaTime.getMonth() + 1).padStart(2, '0');
   const day = String(koreaTime.getDate()).padStart(2, '0');
@@ -305,4 +323,257 @@ exports.runDailyLottery = functions.pubsub
         throw e;
       }
     });
+
+// =========================
+// 기프트쇼비즈 API 연동
+// =========================
+
+// 상품 리스트 조회
+async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
+  try {
+    // 기프트쇼비즈 API 요청 본문 (API CODE 0101: 상품 리스트 조회)
+    const requestBody = {
+      api_code: '0101',
+      custom_auth_code: authCode,
+      custom_auth_token: authToken,
+      dev_yn: 'N',
+      start: String(start),
+      size: String(size),
+    };
+    
+    // 인증 정보 확인
+    if (!authCode || !authToken) {
+      console.error('인증 정보 누락:', { authCode: !!authCode, authToken: !!authToken });
+      return {
+        success: false,
+        error: '인증 정보가 누락되었습니다.',
+      };
+    }
+    
+    console.log('기프트쇼비즈 API 요청:', JSON.stringify(requestBody, null, 2));
+    console.log('API URL:', `${GIFTSHOWBIZ_BASE_URL}/goods`);
+    
+    // 모든 필수 파라미터가 비어있지 않은지 확인
+    if (!authCode || authCode.trim() === '') {
+      console.error('custom_auth_code가 비어있습니다.');
+      return {
+        success: false,
+        error: 'custom_auth_code가 비어있습니다.',
+      };
+    }
+    if (!authToken || authToken.trim() === '') {
+      console.error('custom_auth_token이 비어있습니다.');
+      return {
+        success: false,
+        error: 'custom_auth_token이 비어있습니다.',
+      };
+    }
+    
+    // form-urlencoded 형식으로 시도 (API 문서에서 "파라미터" 형식 요구)
+    const formData = new URLSearchParams();
+    formData.append('api_code', '0101');
+    formData.append('custom_auth_code', authCode.trim());
+    formData.append('custom_auth_token', authToken.trim());
+    formData.append('dev_yn', 'N');
+    formData.append('start', String(start));
+    formData.append('size', String(size));
+    
+    console.log('Form Data:', formData.toString());
+    console.log('각 파라미터 확인:', {
+      api_code: '0101',
+      custom_auth_code: authCode.trim(),
+      custom_auth_token: authToken.trim(),
+      dev_yn: 'N',
+      start: String(start),
+      size: String(size),
+    });
+    
+    // form-urlencoded 형식으로 요청
+    const response = await axios.post(
+      `${GIFTSHOWBIZ_BASE_URL}/goods`,
+      formData.toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
+
+    console.log('기프트쇼비즈 API 응답:', JSON.stringify(response.data, null, 2));
+
+    if (response.data.code === '0000') {
+      return {
+        success: true,
+        listNum: response.data.result?.listNum || 0,
+        goodsList: response.data.result?.goodsList || [],
+      };
+    } else {
+      console.error('기프트쇼비즈 API 오류:', response.data.message);
+      console.error('기프트쇼비즈 API 오류 코드:', response.data.code);
+      console.error('기프트쇼비즈 API 전체 응답:', JSON.stringify(response.data, null, 2));
+      return {
+        success: false,
+        error: response.data.message || '알 수 없는 오류',
+      };
+    }
+  } catch (e) {
+    console.error('기프트쇼비즈 API 호출 오류:', e);
+    if (e.response) {
+      console.error('API 응답 상태:', e.response.status);
+      console.error('API 응답 데이터:', JSON.stringify(e.response.data, null, 2));
+    }
+    return {
+      success: false,
+      error: e.message || 'API 호출 실패',
+    };
+  }
+}
+
+// 상품 리스트 조회 API (HTTP 호출 가능)
+exports.getGiftCardList = functions.https.onCall(async (data, context) => {
+  try {
+    // 인증 확인 (선택사항)
+    // if (!context.auth) {
+    //   throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    // }
+
+    const start = data.start || 1;
+    const size = data.size || 20;
+
+    // Secret 값은 런타임에만 접근 가능
+    const authCode = getSecret('GIFTSHOWBIZ_AUTH_CODE');
+    const authToken = getSecret('GIFTSHOWBIZ_AUTH_TOKEN');
+
+    console.log('인증 정보 확인:', {
+      authCode: authCode ? `${authCode.substring(0, 10)}...` : 'NULL',
+      authToken: authToken ? `${authToken.substring(0, 10)}...` : 'NULL',
+      authCodeLength: authCode ? authCode.length : 0,
+      authTokenLength: authToken ? authToken.length : 0,
+    });
+
+    if (!authCode || !authToken) {
+      console.error('인증 정보 누락:', { authCode: !!authCode, authToken: !!authToken });
+      throw new functions.https.HttpsError('internal', 'API 인증 정보를 가져올 수 없습니다.');
+    }
+
+    console.log('API 호출 시작:', { start, size });
+    const result = await getGiftCardList(start, size, authCode, authToken);
+    console.log('API 호출 결과:', { success: result.success, error: result.error, listNum: result.listNum });
+    console.log('goodsList 개수:', result.goodsList ? result.goodsList.length : 0);
+
+    // API 호출 성공 시 결과 반환 (Firestore 캐시는 선택사항)
+    if (result.success && result.goodsList && result.goodsList.length > 0) {
+      // Firestore에 캐시 저장 (선택사항 - 실패해도 API 결과는 반환)
+      try {
+        const batch = db.batch();
+        let batchCount = 0;
+        
+        // Firestore batch는 최대 500개까지만 가능하므로 분할 처리
+        for (let i = 0; i < result.goodsList.length; i++) {
+          const goods = result.goodsList[i];
+          
+          // goods 객체가 유효한지 확인
+          if (!goods || !goods.goodsCode) {
+            console.warn(`유효하지 않은 상품 데이터 건너뛰기: ${JSON.stringify(goods)}`);
+            continue;
+          }
+          
+          const docRef = db.collection('giftcards').doc(String(goods.goodsCode));
+          batch.set(
+            docRef,
+            {
+              goodsCode: String(goods.goodsCode),
+              goodsName: String(goods.goodsName || ''),
+              salePrice: Number(goods.salePrice) || 0,
+              discountPrice: Number(goods.discountPrice) || 0,
+              goodsimg: String(goods.goodsimg || goods.mmsGoodsimg || ''),
+              brandName: String(goods.brandName || ''),
+              goodsTypeNm: String(goods.goodsTypeNm || ''),
+              lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+          batchCount++;
+          
+          // 500개마다 배치 커밋
+          if (batchCount >= 500) {
+            await batch.commit();
+            console.log(`✅ Firestore 캐시 저장 완료: ${batchCount}개`);
+            batchCount = 0;
+          }
+        }
+        
+        // 남은 배치 커밋
+        if (batchCount > 0) {
+          await batch.commit();
+          console.log(`✅ Firestore 캐시 저장 완료: ${batchCount}개`);
+        }
+        
+        console.log(`✅ 총 ${result.goodsList.length}개 기프티콘 데이터 처리 완료`);
+      } catch (firestoreError) {
+        // Firestore 오류는 로그만 남기고 API 결과는 반환
+        console.error('❌ Firestore 캐시 저장 중 오류 (무시하고 계속 진행):', firestoreError);
+        console.error('오류 상세:', firestoreError.message, firestoreError.stack);
+      }
+    }
+
+    // 항상 결과 반환 (성공/실패 여부와 관계없이)
+    console.log('최종 반환 결과:', { 
+      success: result.success, 
+      goodsListLength: result.goodsList ? result.goodsList.length : 0 
+    });
+    return result;
+  } catch (e) {
+    console.error('상품 리스트 조회 오류:', e);
+    throw new functions.https.HttpsError('internal', '상품 리스트 조회 실패', e.message);
+  }
+});
+
+// 상품 상세 정보 조회
+exports.getGiftCardDetail = functions.https.onCall(async (data, context) => {
+  try {
+    const goodsCode = data.goodsCode;
+    if (!goodsCode) {
+      throw new functions.https.HttpsError('invalid-argument', '상품 코드가 필요합니다.');
+    }
+
+    // Secret 값은 런타임에만 접근 가능
+    const authCode = getSecret('GIFTSHOWBIZ_AUTH_CODE');
+    const authToken = getSecret('GIFTSHOWBIZ_AUTH_TOKEN');
+
+    if (!authCode || !authToken) {
+      throw new functions.https.HttpsError('internal', 'API 인증 정보를 가져올 수 없습니다.');
+    }
+
+    const response = await axios.post(
+      `${GIFTSHOWBIZ_BASE_URL}/goods/${goodsCode}`,
+      {
+        api_code: '0111',
+        custom_auth_code: authCode,
+        custom_auth_token: authToken,
+        dev_yn: 'N',
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (response.data.code === '0000') {
+      return {
+        success: true,
+        goodsDetail: response.data.result?.goodsDetail || null,
+      };
+    } else {
+      return {
+        success: false,
+        error: response.data.message || '알 수 없는 오류',
+      };
+    }
+    } catch (e) {
+      console.error('상품 상세 조회 오류:', e);
+      throw new functions.https.HttpsError('internal', '상품 상세 조회 실패', e.message);
+    }
+});
 
