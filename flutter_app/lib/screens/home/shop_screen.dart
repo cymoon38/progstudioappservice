@@ -383,7 +383,7 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       debugPrint('🔄 기프티콘 목록 로드 시작...');
       
       // 최신 데이터 먼저 가져오기
-      final latestList = await dataService.getGiftCardList(start: 1, size: 20);
+      final latestList = await dataService.getGiftCardList(start: 1, size: 100);
       debugPrint('📊 최신 데이터: ${latestList.length}개');
       
       if (mounted) {
@@ -471,7 +471,7 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       sliver: SliverGrid(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          childAspectRatio: 0.7, // 높이 조정 (0.65 -> 0.7)
+          childAspectRatio: 0.65, // 높이 조정 (정보 영역 공간 확보)
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
@@ -546,78 +546,86 @@ class _GiftCardItem extends StatelessWidget {
             ),
           ),
           // 정보 영역 (고정 높이, 오버플로우 방지)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 브랜드명
-                Text(
-                  giftCard.brandName,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: AppTheme.textSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                // 상품명 (고정 높이, 2줄)
-                SizedBox(
-                  height: 28, // 2줄 고정 높이 (더 줄임)
-                  child: Text(
-                    giftCard.goodsName,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      height: 1.2, // 줄 간격 조정
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 브랜드명
+                  Text(
+                    giftCard.brandName,
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: AppTheme.textSecondary,
                     ),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                const SizedBox(height: 4),
-                // 가격 (고정 높이)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (giftCard.discountPrice < giftCard.salePrice) ...[
-                      Text(
-                        _formatPrice(giftCard.salePrice),
-                        style: TextStyle(
-                          fontSize: 9,
-                          color: Colors.grey[600],
-                          decoration: TextDecoration.lineThrough,
+                  const SizedBox(height: 2),
+                  // 가격 및 코인 아이콘 (상품명 위에 표시)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _formatPrice(giftCard.discountPrice),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.primaryColor,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 3),
+                      const SizedBox(width: 4),
+                      // 코인 아이콘 (그라데이션 배경)
+                      Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'C',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
-                    Flexible(
+                  ),
+                  const Spacer(),
+                  // 상품명 (좌우 스크롤 가능, 한 줄)
+                  SizedBox(
+                    height: 12, // 한 줄 고정 높이
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const AlwaysScrollableScrollPhysics(),
                       child: Text(
-                        _formatPrice(giftCard.discountPrice),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.primaryColor,
+                        giftCard.goodsName,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          height: 1.0,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 2),
-                    Text(
-                      'C',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.primaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -625,12 +633,12 @@ class _GiftCardItem extends StatelessWidget {
     );
   }
   
-  // 가격 포맷팅 (천 단위 콤마)
+  // 가격 포맷팅 (콤마 형식)
   String _formatPrice(int price) {
-    if (price >= 1000) {
-      return '${(price / 1000).toStringAsFixed(0)}천';
-    }
-    return price.toString();
+    return price.toString().replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]},',
+    );
   }
 }
 
