@@ -22,6 +22,7 @@ class _MissionScreenState extends State<MissionScreen> {
   String? _lastUserId;
   int _completedMissionCount = 0;
   int _totalMissionReward = 0;
+  int _userPostCount = 0; // 사용자가 업로드한 게시물 수
   StreamSubscription? _notificationSubscription;
   bool _isPopupOpen = false; // 팝업 중복 방지
 
@@ -121,6 +122,10 @@ class _MissionScreenState extends State<MissionScreen> {
           if (userMission != null && userMission.completed) {
             continue;
           }
+          // 사용자가 이미 게시물을 1개 이상 업로드한 경우도 표시하지 않음
+          if (_userPostCount >= 1) {
+            continue;
+          }
         }
         
         result.add(mission);
@@ -161,10 +166,18 @@ class _MissionScreenState extends State<MissionScreen> {
       // 완료한 미션 수와 획득한 코인 수 가져오기 (coinHistory 기반)
       int completedCount = 0;
       int totalReward = 0;
+      int userPostCount = 0;
       if (authService.user != null) {
         try {
           completedCount = await dataService.getCompletedMissionCount(authService.user!.uid);
           totalReward = await dataService.getTotalMissionReward(authService.user!.uid);
+          
+          // 사용자가 업로드한 게시물 수 확인
+          final username = authService.userData?['name'] as String? ?? '';
+          if (username.isNotEmpty) {
+            final userPosts = await dataService.getUserPosts(username);
+            userPostCount = userPosts.length;
+          }
         } catch (e) {
           debugPrint('미션 통계 가져오기 오류 (무시): $e');
         }
@@ -174,6 +187,7 @@ class _MissionScreenState extends State<MissionScreen> {
         setState(() {
           _completedMissionCount = completedCount;
           _totalMissionReward = totalReward;
+          _userPostCount = userPostCount;
           _isLoadingMissions = false;
         });
       }
@@ -283,7 +297,10 @@ class _MissionScreenState extends State<MissionScreen> {
                       decoration: AppTheme.gradientButtonDecoration,
                       child: ElevatedButton(
                         onPressed: () async {
+                          debugPrint('🎯 [MissionScreen] 미션 참가하기 버튼 클릭: missionId=${mission.id}');
+                          
                           if (authService.user == null) {
+                            debugPrint('❌ [MissionScreen] 사용자가 로그인하지 않음');
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('로그인이 필요합니다.'),
@@ -293,31 +310,50 @@ class _MissionScreenState extends State<MissionScreen> {
                             return;
                           }
                           
-                          // 시간 제한 미션 시작
-                          final success = await dataService.startMission(
-                            userId: authService.user!.uid,
-                            missionId: mission.id,
-                          );
+                          debugPrint('✅ [MissionScreen] 사용자 확인: ${authService.user!.uid}');
                           
-                          if (success) {
-                            // 팝업 닫기
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
-                            }
-                            
-                            // 미션 상태 새로고침
-                            await dataService.getUserMissions(authService.user!.uid);
-                            
-                            // 미션 목록 새로고침
-                            await _loadMissions();
-                          } else {
-                            if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('미션 시작에 실패했습니다.'),
-                                backgroundColor: Colors.red,
-                              ),
+                          try {
+                            // 시간 제한 미션 시작
+                            debugPrint('🚀 [MissionScreen] startMission 호출 시작');
+                            final success = await dataService.startMission(
+                              userId: authService.user!.uid,
+                              missionId: mission.id,
                             );
+                            debugPrint('📊 [MissionScreen] startMission 결과: $success');
+                            
+                            if (success) {
+                              debugPrint('✅ [MissionScreen] 미션 시작 성공');
+                              // 팝업 닫기
+                              if (context.mounted) {
+                                Navigator.of(context).pop();
+                              }
+                              
+                              // 미션 상태 새로고침
+                              await dataService.getUserMissions(authService.user!.uid);
+                              
+                              // 미션 목록 새로고침
+                              await _loadMissions();
+                            } else {
+                              debugPrint('❌ [MissionScreen] 미션 시작 실패 (success=false)');
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('미션 시작에 실패했습니다.'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          } catch (e, stackTrace) {
+                            debugPrint('❌ [MissionScreen] 예외 발생: $e');
+                            debugPrint('❌ [MissionScreen] 스택 트레이스: $stackTrace');
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('미션 시작 중 오류가 발생했습니다: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
                             }
                           }
                         },

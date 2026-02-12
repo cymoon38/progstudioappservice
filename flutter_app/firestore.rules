@@ -96,22 +96,30 @@ service cloud.firestore {
     // 사용자 미션 (userMissions)
     match /userMissions/{userMissionId} {
       // 개별 문서 읽기: 본인의 미션만 읽을 수 있음 (문서가 존재하지 않을 때도 허용)
+      // 문서 ID 형식: userId_missionId
+      // 문서가 없거나, 문서 ID가 현재 사용자로 시작하거나, 문서의 userId가 현재 사용자와 일치하면 허용
       allow get: if request.auth != null && 
-                   (!resource.exists || resource.data.userId == request.auth.uid);
+                   (!resource.exists || 
+                    resource.data.userId == request.auth.uid ||
+                    userMissionId.matches('^' + request.auth.uid + '_.*'));
       
       // 목록 조회 (쿼리): 로그인한 사용자는 자신의 미션만 조회 가능
+      // where('userId', isEqualTo: request.auth.uid) 쿼리를 사용하므로 안전
       // 쿼리 결과의 각 문서는 본인의 것만 반환되어야 함
       allow list: if request.auth != null && 
-                    resource.data.userId == request.auth.uid;
+                    (!resource.exists || resource.data.userId == request.auth.uid);
       
       // 생성: 인증된 사용자가 자신의 미션을 생성할 수 있음
       allow create: if request.auth != null && 
                       request.resource.data.userId == request.auth.uid;
       
       // 업데이트: 인증된 사용자가 자신의 미션을 업데이트할 수 있음
+      // 좋아요 3개 누르기 미션은 모든 로그인한 사용자가 참여 가능
+      // 문서 ID 형식: userId_missionId이므로 문서 ID로 사용자 확인
+      // 또는 기존 문서의 userId가 현재 사용자와 일치하면 허용
       allow update: if request.auth != null && 
-                      (request.resource.data.userId == request.auth.uid &&
-                       (!resource.exists || resource.data.userId == request.auth.uid));
+                      (userMissionId.matches('^' + request.auth.uid + '_.*') ||
+                       (resource.exists && resource.data.get('userId', '') == request.auth.uid));
       
       // 삭제: 본인의 미션만 삭제할 수 있음
       allow delete: if request.auth != null && 

@@ -550,20 +550,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          const AppProfileIcon(size: 24, iconSize: 16, flat: true),
-                          const SizedBox(width: 8),
-                          Text(
-                            post.author,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.textPrimary,
-                              fontSize: 16,
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const AppProfileIcon(size: 24, iconSize: 16, flat: true),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Text(
+                                  post.author,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.textPrimary,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         DateFormat('yyyy.MM.dd').format(post.date),
                         style: TextStyle(

@@ -2580,43 +2580,77 @@ class DataService extends ChangeNotifier {
     required String missionId,
   }) async {
     try {
+      debugPrint('🚀 [startMission] 시작: userId=$userId, missionId=$missionId');
+      
+      // 미션 목록이 비어있으면 먼저 로드
+      if (_missions.isEmpty) {
+        debugPrint('📋 [startMission] 미션 목록이 비어있음, 로드 중...');
+        await getMissions();
+        debugPrint('📋 [startMission] 미션 목록 로드 완료: ${_missions.length}개');
+      }
+      
       final mission = _missions.firstWhere((m) => m.id == missionId);
+      debugPrint('✅ [startMission] 미션 찾음: ${mission.title} (type: ${mission.type})');
+      
       final docRef = _firestore.collection('userMissions').doc(_userMissionDocId(userId, missionId));
+      debugPrint('📄 [startMission] 문서 참조: ${docRef.path}');
 
       // 현재 미션 상태 확인
       final snapshot = await docRef.get();
+      debugPrint('🔍 [startMission] 문서 확인: missionId=$missionId, userId=$userId, exists=${snapshot.exists}');
+      
       if (snapshot.exists) {
         final data = snapshot.data() as Map<String, dynamic>;
         final bool completed = data['completed'] == true;
         final bool hasStartTime = data['startTime'] != null;
+        final existingUserId = data['userId'] as String?;
+        
+        debugPrint('🔍 [startMission] 문서 데이터: existingUserId=$existingUserId, completed=$completed, hasStartTime=$hasStartTime');
 
         // 이미 진행 중인 미션이라면 (startTime 있고, 아직 completed 아님) 진행도를 유지하고 그대로 성공 처리
         if (hasStartTime && !completed) {
           debugPrint('ℹ️ 이미 진행 중인 미션입니다. 진행도 유지: missionId=$missionId, userId=$userId');
           return true;
         }
-      }
-
-      // 여기까지 왔다는 건
-      // - 처음 시작이거나, 또는 완료된 뒤 재참가 가능한(isRepeatable) 미션을 다시 시작하는 경우
-      final dataToSet = <String, dynamic>{
-        'userId': userId,
-        'missionId': missionId,
-        'startTime': FieldValue.serverTimestamp(),
-        'progress': 0,
-        'completed': false,
-      };
+        
+        // 문서가 존재하므로 update만 사용 (userId는 변경하지 않음)
+        debugPrint('🔄 [startMission] update 시도: missionId=$missionId, userId=$userId, existingUserId=$existingUserId');
+        final updateData = <String, dynamic>{
+          'startTime': FieldValue.serverTimestamp(),
+          'progress': 0,
+          'completed': false,
+        };
+        if (mission.type == 'like_click') {
+          updateData['likedPostIds'] = [];
+        }
+        await docRef.update(updateData);
+        debugPrint('✅ [startMission] update 성공');
+      } else {
+        // 문서가 없으면 생성 (일반적으로는 _initializeUserMissions에서 이미 생성됨)
+        debugPrint('📝 [startMission] 문서 없음, 생성 시도: missionId=$missionId, userId=$userId');
+        final dataToSet = <String, dynamic>{
+          'userId': userId,
+          'missionId': missionId,
+          'startTime': FieldValue.serverTimestamp(),
+          'progress': 0,
+          'completed': false,
+        };
         if (mission.type == 'like_click') {
           dataToSet['likedPostIds'] = [];
         }
-      await docRef.set(dataToSet, SetOptions(merge: true));
+        await docRef.set(dataToSet);
+        debugPrint('✅ [startMission] create 성공');
+      }
 
       // 로컬 상태 업데이트
+      debugPrint('🔄 [startMission] 로컬 상태 업데이트 중...');
       await getUserMissions(userId);
+      debugPrint('✅ [startMission] 완료');
       
       return true;
-    } catch (e) {
-      debugPrint('미션 시작 처리 오류: $e');
+    } catch (e, stackTrace) {
+      debugPrint('❌ [startMission] 오류 발생: $e');
+      debugPrint('❌ [startMission] 스택 트레이스: $stackTrace');
       return false;
     }
   }
