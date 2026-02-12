@@ -12,12 +12,14 @@ const GIFTSHOWBIZ_BASE_URL = 'https://bizapi.giftishow.com/bizApi';
 // 환경 변수에서 Secret 가져오기
 // Firebase Console > Functions > 설정 > 환경 변수에서 설정
 function getSecret(secretName) {
-  // 상용환경 키 사용 (나중에 환경 변수로 변경)
+  // 상용 환경 키 사용 (운영 환경)
   if (secretName === 'GIFTSHOWBIZ_AUTH_CODE') {
-    return 'REAL56bf67edd37e4733af8ddba2d5387150';
+    // 상용 환경 키
+    return process.env.GIFTSHOWBIZ_AUTH_CODE_PROD || 'REAL56bf67edd37e4733af8ddba2d5387150';
   }
   if (secretName === 'GIFTSHOWBIZ_AUTH_TOKEN') {
-    return '3RXSN9gtle+bE63cH3vnSg==';
+    // 상용 환경 토큰
+    return process.env.GIFTSHOWBIZ_AUTH_TOKEN_PROD || '3RXSN9gtle+bE63cH3vnSg==';
   }
   // 환경 변수에서 가져오기 (배포 시 설정)
   return process.env[secretName] || '';
@@ -366,7 +368,7 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
       api_code: '0101',
       custom_auth_code: authCode,
       custom_auth_token: authToken,
-      dev_yn: 'N',
+      dev_yn: 'N', // 상용 환경
       start: String(start),
       size: String(size),
     };
@@ -404,7 +406,7 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
     formData.append('api_code', '0101');
     formData.append('custom_auth_code', authCode.trim());
     formData.append('custom_auth_token', authToken.trim());
-    formData.append('dev_yn', 'N');
+    formData.append('dev_yn', 'N'); // 상용 환경
     formData.append('start', String(start));
     formData.append('size', String(size));
     
@@ -413,7 +415,7 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
       api_code: '0101',
       custom_auth_code: authCode.trim(),
       custom_auth_token: authToken.trim(),
-      dev_yn: 'N',
+      dev_yn: 'N', // 상용 환경
       start: String(start),
       size: String(size),
     });
@@ -430,6 +432,18 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
     );
 
     console.log('기프트쇼비즈 API 응답:', JSON.stringify(response.data, null, 2));
+    
+    // 첫 번째 상품의 이미지 필드 확인 (디버깅)
+    if (response.data.code === '0000' && response.data.result?.goodsList?.length > 0) {
+      const firstGoods = response.data.result.goodsList[0];
+      console.log('📦 첫 번째 상품 데이터 구조:', JSON.stringify(firstGoods, null, 2));
+      console.log('🖼️ 첫 번째 상품 이미지 필드들:');
+      console.log('   goodsimg:', firstGoods.goodsimg);
+      console.log('   mmsGoodsimg:', firstGoods.mmsGoodsimg);
+      console.log('   goodsImgS:', firstGoods.goodsImgS);
+      console.log('   goodsImgB:', firstGoods.goodsImgB);
+      console.log('   모든 키:', Object.keys(firstGoods));
+    }
 
     if (response.data.code === '0000') {
       return {
@@ -491,6 +505,36 @@ exports.getGiftCardList = functions.https.onCall(async (data, context) => {
     console.log('API 호출 결과:', { success: result.success, error: result.error, listNum: result.listNum });
     console.log('goodsList 개수:', result.goodsList ? result.goodsList.length : 0);
 
+    // API 호출 실패 시 Firestore 캐시에서 데이터 반환 시도
+    if (!result.success || !result.goodsList || result.goodsList.length === 0) {
+      console.log('⚠️ API 호출 실패, Firestore 캐시에서 데이터 조회 시도...');
+      try {
+        const cachedSnapshot = await db.collection('giftcards')
+          .orderBy('lastUpdated', 'desc')
+          .limit(size)
+          .get();
+        
+        if (!cachedSnapshot.empty) {
+          const cachedGoodsList = cachedSnapshot.docs.map(doc => doc.data());
+          console.log(`✅ Firestore 캐시에서 ${cachedGoodsList.length}개 상품 조회 성공`);
+          return {
+            success: true,
+            goodsList: cachedGoodsList,
+            fromCache: true,
+          };
+        }
+      } catch (cacheError) {
+        console.error('❌ Firestore 캐시 조회 오류:', cacheError);
+      }
+      
+      // 캐시도 없으면 에러 반환
+      return {
+        success: false,
+        error: result.error || '상품 목록을 가져올 수 없습니다.',
+        goodsList: [],
+      };
+    }
+
     // API 호출 성공 시 결과 반환 (Firestore 캐시는 선택사항)
     if (result.success && result.goodsList && result.goodsList.length > 0) {
       // Firestore에 캐시 저장 (선택사항 - 실패해도 API 결과는 반환)
@@ -509,6 +553,28 @@ exports.getGiftCardList = functions.https.onCall(async (data, context) => {
           }
           
           const docRef = db.collection('giftcards').doc(String(goods.goodsCode));
+          
+          // 이미지 URL 우선순위: goodsimg > mmsGoodsimg > goodsImgS > goodsImgB
+          // 모든 가능한 이미지 필드 확인
+          const imageUrl = goods.goodsimg || 
+                          goods.mmsGoodsimg || 
+                          goods.goodsImgS || 
+                          goods.goodsImgB ||
+                          goods.goodsImg ||
+                          goods.image ||
+                          goods.img ||
+                          '';
+          
+          console.log(`📦 상품 ${goods.goodsCode} 이미지 필드 확인:`);
+          console.log(`   goodsimg: ${goods.goodsimg}`);
+          console.log(`   mmsGoodsimg: ${goods.mmsGoodsimg}`);
+          console.log(`   goodsImgS: ${goods.goodsImgS}`);
+          console.log(`   goodsImgB: ${goods.goodsImgB}`);
+          console.log(`   goodsImg: ${goods.goodsImg}`);
+          console.log(`   image: ${goods.image}`);
+          console.log(`   img: ${goods.img}`);
+          console.log(`   최종 이미지 URL: ${imageUrl}`);
+          
           batch.set(
             docRef,
             {
@@ -516,7 +582,13 @@ exports.getGiftCardList = functions.https.onCall(async (data, context) => {
               goodsName: String(goods.goodsName || ''),
               salePrice: Number(goods.salePrice) || 0,
               discountPrice: Number(goods.discountPrice) || 0,
-              goodsimg: String(goods.goodsimg || goods.mmsGoodsimg || ''),
+              goodsimg: String(imageUrl),
+              mmsGoodsimg: String(goods.mmsGoodsimg || ''),
+              goodsImgS: String(goods.goodsImgS || ''),
+              goodsImgB: String(goods.goodsImgB || ''),
+              goodsImg: String(goods.goodsImg || ''),
+              image: String(goods.image || ''),
+              img: String(goods.img || ''),
               brandName: String(goods.brandName || ''),
               goodsTypeNm: String(goods.goodsTypeNm || ''),
               lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
@@ -581,7 +653,7 @@ exports.getGiftCardDetail = functions.https.onCall(async (data, context) => {
         api_code: '0111',
         custom_auth_code: authCode,
         custom_auth_token: authToken,
-        dev_yn: 'N',
+        dev_yn: 'N', // 상용 환경
       },
       {
         headers: {

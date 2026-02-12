@@ -3256,13 +3256,23 @@ class DataService extends ChangeNotifier {
   // 기프티콘 상품 모델
   static GiftCard fromGiftCardMap(Map<String, dynamic> data) {
     // 이미지 URL 우선순위: goodsimg > mmsGoodsimg > goodsImgS > goodsImgB
-    final imageUrl = data['goodsimg'] ?? 
-                     data['mmsGoodsimg'] ?? 
-                     data['goodsImgS'] ?? 
-                     data['goodsImgB'] ?? 
-                     '';
+    final imageUrl = (data['goodsimg']?.toString().trim() ?? '').isNotEmpty
+        ? data['goodsimg'].toString().trim()
+        : (data['mmsGoodsimg']?.toString().trim() ?? '').isNotEmpty
+            ? data['mmsGoodsimg'].toString().trim()
+            : (data['goodsImgS']?.toString().trim() ?? '').isNotEmpty
+                ? data['goodsImgS'].toString().trim()
+                : (data['goodsImgB']?.toString().trim() ?? '').isNotEmpty
+                    ? data['goodsImgB'].toString().trim()
+                    : '';
     
-    debugPrint('🖼️ 이미지 URL 매핑: goodsimg=${data['goodsimg']}, mmsGoodsimg=${data['mmsGoodsimg']}, 최종=$imageUrl');
+    debugPrint('🖼️ 이미지 URL 매핑:');
+    debugPrint('   goodsimg=${data['goodsimg']}');
+    debugPrint('   mmsGoodsimg=${data['mmsGoodsimg']}');
+    debugPrint('   goodsImgS=${data['goodsImgS']}');
+    debugPrint('   goodsImgB=${data['goodsImgB']}');
+    debugPrint('   최종 이미지 URL=$imageUrl');
+    debugPrint('   상품명=${data['goodsName']}');
     
     return GiftCard(
       goodsCode: (data['goodsCode'] ?? '').toString(),
@@ -3273,7 +3283,7 @@ class DataService extends ChangeNotifier {
       discountPrice: (data['discountPrice'] ?? 0) is int 
           ? (data['discountPrice'] ?? 0) 
           : int.tryParse('${data['discountPrice']}') ?? 0,
-      goodsimg: imageUrl.toString(),
+      goodsimg: imageUrl,
       brandName: (data['brandName'] ?? '').toString(),
       goodsTypeNm: (data['goodsTypeNm'] ?? '').toString(),
     );
