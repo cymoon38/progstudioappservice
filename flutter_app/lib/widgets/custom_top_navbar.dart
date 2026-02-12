@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../screens/auth/login_screen.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../services/auth_service.dart';
 import '../services/data_service.dart';
@@ -41,7 +42,12 @@ class CustomTopNavbar extends StatelessWidget implements PreferredSizeWidget {
                     if (!authService.isLoggedIn) {
                       return TextButton(
                         onPressed: () {
-                          // TODO: 로그인 화면으로 이동
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LoginScreen(),
+                            ),
+                          );
                         },
                         child: const Text('로그인'),
                       );

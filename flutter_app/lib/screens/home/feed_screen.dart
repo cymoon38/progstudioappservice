@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -396,7 +398,7 @@ class _MissionPreviewSection extends StatefulWidget {
   State<_MissionPreviewSection> createState() => _MissionPreviewSectionState();
 }
 
-class _MissionPreviewSectionState extends State<_MissionPreviewSection> {
+class _MissionPreviewSectionState extends State<_MissionPreviewSection> with WidgetsBindingObserver {
   String? _generalWinner;
   String? _generalWinnerPostId;
   String? _popularWinner;
@@ -406,7 +408,22 @@ class _MissionPreviewSectionState extends State<_MissionPreviewSection> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadLotteryResults();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 앱이 포그라운드로 돌아올 때 당첨 결과 갱신 (오후 5시 당첨 후 반영)
+    if (state == AppLifecycleState.resumed) {
+      _loadLotteryResults();
+    }
   }
 
   Future<void> _loadLotteryResults() async {

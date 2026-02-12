@@ -129,18 +129,47 @@ async function runLottery() {
     
     console.log('🎲 추첨 시작...');
     
-    // 지난 24시간 기준 시간 계산
+    // 한국 시간 기준으로 어제 오후 5시부터 오늘 오후 5시까지 계산
+    // 현재 시간을 한국 시간으로 변환하여 오늘 날짜 확인
     const now = new Date();
-    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const koreaNow = new Date(now.toLocaleString('en-US', {timeZone: 'Asia/Seoul'}));
+    const koreaYear = koreaNow.getFullYear();
+    const koreaMonth = koreaNow.getMonth();
+    const koreaDate = koreaNow.getDate();
     
-    console.log(`📅 추첨 대상 기간: ${twentyFourHoursAgo.toISOString()} ~ ${now.toISOString()}`);
+    // 오늘 오후 5시 (17:00:00) - 한국 시간을 ISO 8601 형식으로 생성
+    // 한국 시간대(+09:00)를 명시하여 정확한 시간 계산
+    const today5PMKoreaStr = `${koreaYear}-${String(koreaMonth + 1).padStart(2, '0')}-${String(koreaDate).padStart(2, '0')}T17:00:00+09:00`;
+    const today5PMKorea = new Date(today5PMKoreaStr);
+    // UTC로 변환 (한국 시간에서 9시간 빼기)
+    const today5PMUTC = new Date(today5PMKorea.getTime() - 9 * 60 * 60 * 1000);
     
-    // 1. 인기작품에서 먼저 추첨 (지난 24시간 내 게시물만)
+    // 어제 날짜 계산
+    const yesterdayKorea = new Date(koreaYear, koreaMonth, koreaDate - 1);
+    const yesterdayYear = yesterdayKorea.getFullYear();
+    const yesterdayMonth = yesterdayKorea.getMonth();
+    const yesterdayDate = yesterdayKorea.getDate();
+    
+    // 어제 오후 5시 (17:00:00) - 한국 시간을 ISO 8601 형식으로 생성
+    const yesterday5PMKoreaStr = `${yesterdayYear}-${String(yesterdayMonth + 1).padStart(2, '0')}-${String(yesterdayDate).padStart(2, '0')}T17:00:00+09:00`;
+    const yesterday5PMKorea = new Date(yesterday5PMKoreaStr);
+    // UTC로 변환
+    const yesterday5PMUTC = new Date(yesterday5PMKorea.getTime() - 9 * 60 * 60 * 1000);
+    
+    // Firestore Timestamp로 변환
+    const startTime = admin.firestore.Timestamp.fromDate(yesterday5PMUTC);
+    const endTime = admin.firestore.Timestamp.fromDate(today5PMUTC);
+    
+    console.log(`📅 추첨 대상 기간: 어제 오후 5시 (${yesterday5PMUTC.toISOString()}) ~ 오늘 오후 5시 (${today5PMUTC.toISOString()})`);
+    console.log(`📅 한국 시간 기준: ${yesterday5PMKoreaStr.replace('T', ' ').replace('+09:00', '')} ~ ${today5PMKoreaStr.replace('T', ' ').replace('+09:00', '')}`);
+    
+    // 1. 인기작품에서 먼저 추첨 (어제 오후 5시 ~ 오늘 오후 5시 사이 게시물)
     const popularPostsSnapshot = await db
         .collection('posts')
         .where('isPopular', '==', true)
         .where('type', '!=', 'notice') // 공지사항 제외
-        .where('date', '>=', admin.firestore.Timestamp.fromDate(twentyFourHoursAgo)) // 지난 24시간 내
+        .where('date', '>=', startTime) // 어제 오후 5시 이후
+        .where('date', '<', endTime) // 오늘 오후 5시 이전
         .get();
     
     const popularPosts = popularPostsSnapshot.docs
@@ -197,12 +226,13 @@ async function runLottery() {
       }
     }
     
-    // 2. 일반 작품에서 추첨 (인기작품 당첨자 제외, 지난 24시간 내 게시물만)
+    // 2. 일반 작품에서 추첨 (인기작품 당첨자 제외, 어제 오후 5시 ~ 오늘 오후 5시 사이 게시물)
     const generalPostsSnapshot = await db
         .collection('posts')
         .where('isPopular', '==', false) // 인기작품이 아닌 것
         .where('type', '!=', 'notice') // 공지사항 제외
-        .where('date', '>=', admin.firestore.Timestamp.fromDate(twentyFourHoursAgo)) // 지난 24시간 내
+        .where('date', '>=', startTime) // 어제 오후 5시 이후
+        .where('date', '<', endTime) // 오늘 오후 5시 이전
         .get();
     
     const generalPosts = generalPostsSnapshot.docs

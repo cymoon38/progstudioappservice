@@ -95,21 +95,28 @@ service cloud.firestore {
     
     // 사용자 미션 (userMissions)
     match /userMissions/{userMissionId} {
-      // 읽기: 본인의 미션만 읽을 수 있음
-      allow read: if request.auth != null && 
-                     resource.data.userId == request.auth.uid;
+      // 개별 문서 읽기: 본인의 미션만 읽을 수 있음 (문서가 존재하지 않을 때도 허용)
+      allow get: if request.auth != null && 
+                   (!resource.exists || resource.data.userId == request.auth.uid);
       
       // 목록 조회 (쿼리): 로그인한 사용자는 자신의 미션만 조회 가능
-      allow list: if request.auth != null;
+      // 쿼리 결과의 각 문서는 본인의 것만 반환되어야 함
+      allow list: if request.auth != null && 
+                    resource.data.userId == request.auth.uid;
       
-      // 생성/업데이트: 인증된 사용자가 자신의 미션을 생성/업데이트할 수 있음
-      allow create, update: if request.auth != null && 
-                               request.resource.data.userId == request.auth.uid;
+      // 생성: 인증된 사용자가 자신의 미션을 생성할 수 있음
+      allow create: if request.auth != null && 
+                      request.resource.data.userId == request.auth.uid;
       
-           // 삭제: 본인의 미션만 삭제할 수 있음
-           allow delete: if request.auth != null && 
-                               resource.data.userId == request.auth.uid;
-         }
+      // 업데이트: 인증된 사용자가 자신의 미션을 업데이트할 수 있음
+      allow update: if request.auth != null && 
+                      (request.resource.data.userId == request.auth.uid &&
+                       (!resource.exists || resource.data.userId == request.auth.uid));
+      
+      // 삭제: 본인의 미션만 삭제할 수 있음
+      allow delete: if request.auth != null && 
+                      (!resource.exists || resource.data.userId == request.auth.uid);
+    }
          
          // 추첨 결과 (lotteryResults)
          match /lotteryResults/{date} {

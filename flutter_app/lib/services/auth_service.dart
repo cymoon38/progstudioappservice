@@ -86,6 +86,13 @@ class AuthService extends ChangeNotifier {
         'coins': 0,
       });
       
+      // 새 유저의 기본 미션 초기화 (first_upload, like_click)
+      try {
+        await _initializeUserMissions(credential.user!.uid);
+      } catch (e) {
+        debugPrint('미션 초기화 오류 (무시): $e');
+      }
+      
       await _loadUserData(credential.user!.uid);
       return credential;
     } catch (e) {
@@ -132,6 +139,63 @@ class AuthService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('코인 잔액 업데이트 오류: $e');
+    }
+  }
+
+  // 새 유저의 기본 미션 초기화
+  Future<void> _initializeUserMissions(String userId) async {
+    try {
+      // 미션 목록 가져오기
+      final missionsSnapshot = await _firestore
+          .collection('missions')
+          .where('type', whereIn: ['first_upload', 'like_click'])
+          .get();
+
+      if (missionsSnapshot.docs.isEmpty) {
+        debugPrint('⚠️ 기본 미션이 없습니다. 미션을 먼저 생성해주세요.');
+        return;
+      }
+
+      // 각 미션에 대해 userMission 생성
+      final batch = _firestore.batch();
+      for (final missionDoc in missionsSnapshot.docs) {
+        final missionId = missionDoc.id;
+        final missionData = missionDoc.data();
+        final missionType = missionData['type'] as String? ?? '';
+
+        // userMission 문서 ID 생성 (userId와 missionId 조합)
+        final userMissionId = '${userId}_$missionId';
+        final userMissionRef = _firestore.collection('userMissions').doc(userMissionId);
+
+        // 이미 존재하는지 확인
+        final existingDoc = await userMissionRef.get();
+        if (existingDoc.exists) {
+          continue; // 이미 존재하면 건너뜀
+        }
+
+        // userMission 데이터 생성
+        final userMissionData = <String, dynamic>{
+          'userId': userId,
+          'missionId': missionId,
+          'completed': false,
+          'progress': 0,
+        };
+
+        // like_click 미션의 경우 추가 필드 설정
+        if (missionType == 'like_click') {
+          userMissionData['likedPostIds'] = <String>[];
+          // like_click 미션은 시작 시간이 필요 없음 (즉시 시작 가능)
+        }
+
+        batch.set(userMissionRef, userMissionData);
+      }
+
+      // 배치 커밋
+      await batch.commit();
+      debugPrint('✅ 새 유저 미션 초기화 완료: $userId');
+    } catch (e) {
+      debugPrint('❌ 미션 초기화 오류: $e');
+      rethrow;
     }
   }
 }

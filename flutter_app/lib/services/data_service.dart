@@ -1985,19 +1985,45 @@ class DataService extends ChangeNotifier {
         final generalWinner = data?['normalWinner'] as Map<String, dynamic>?;
         final popularWinner = data?['popularWinner'] as Map<String, dynamic>?;
         
-        return {
-          'generalWinner': generalWinner?['name'] as String?,
-          'generalWinnerUserId': generalWinner?['userId'] as String?,
-          'generalWinnerPostId': generalWinner?['postId'] as String?,
-          'popularWinner': popularWinner?['name'] as String?,
-          'popularWinnerUserId': popularWinner?['userId'] as String?,
-          'popularWinnerPostId': popularWinner?['postId'] as String?,
-        };
+        // 오늘 당첨자가 하나라도 있으면 오늘 결과 반환
+        if (generalWinner != null || popularWinner != null) {
+          return {
+            'generalWinner': generalWinner?['name'] as String?,
+            'generalWinnerUserId': generalWinner?['userId'] as String?,
+            'generalWinnerPostId': generalWinner?['postId'] as String?,
+            'popularWinner': popularWinner?['name'] as String?,
+            'popularWinnerUserId': popularWinner?['userId'] as String?,
+            'popularWinnerPostId': popularWinner?['postId'] as String?,
+          };
+        }
       }
       
-      // 오늘 추첨 결과가 없으면 최근 7일 내 추첨 결과 확인
+      // 오늘 추첨 결과가 없거나 당첨자가 없으면 어제 추첨 결과 확인
       final now = DateTime.now();
-      for (int i = 1; i <= 7; i++) {
+      final yesterday = now.subtract(const Duration(days: 1));
+      final yesterdayString = '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
+      
+      final yesterdayDoc = await _firestore.collection('lotteryResults').doc(yesterdayString).get();
+      if (yesterdayDoc.exists) {
+        final data = yesterdayDoc.data() as Map<String, dynamic>?;
+        final generalWinner = data?['normalWinner'] as Map<String, dynamic>?;
+        final popularWinner = data?['popularWinner'] as Map<String, dynamic>?;
+        
+        // 어제 당첨자가 하나라도 있으면 어제 결과 반환
+        if (generalWinner != null || popularWinner != null) {
+          return {
+            'generalWinner': generalWinner?['name'] as String?,
+            'generalWinnerUserId': generalWinner?['userId'] as String?,
+            'generalWinnerPostId': generalWinner?['postId'] as String?,
+            'popularWinner': popularWinner?['name'] as String?,
+            'popularWinnerUserId': popularWinner?['userId'] as String?,
+            'popularWinnerPostId': popularWinner?['postId'] as String?,
+          };
+        }
+      }
+      
+      // 어제도 없으면 최근 7일 내 추첨 결과 확인 (fallback)
+      for (int i = 2; i <= 7; i++) {
         final checkDate = now.subtract(Duration(days: i));
         final dateString = '${checkDate.year}-${checkDate.month.toString().padLeft(2, '0')}-${checkDate.day.toString().padLeft(2, '0')}';
         
@@ -2493,49 +2519,59 @@ class DataService extends ChangeNotifier {
         .collection('userMissions')
         .where('userId', isEqualTo: userId)
         .snapshots()
-        .listen((snapshot) {
-      try {
-        final Map<String, UserMission> result = {};
-        for (final doc in snapshot.docs) {
-          final data = doc.data();
-          final missionId = data['missionId'] as String? ?? '';
-          if (missionId.isEmpty) continue;
+        .listen(
+      (snapshot) {
+        try {
+          final Map<String, UserMission> result = {};
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final missionId = data['missionId'] as String? ?? '';
+            if (missionId.isEmpty) continue;
 
-          final newMission = UserMission.fromFirestore(doc);
-          final existing = result[missionId];
+            final newMission = UserMission.fromFirestore(doc);
+            final existing = result[missionId];
 
-          if (existing == null) {
-            result[missionId] = newMission;
-            continue;
+            if (existing == null) {
+              result[missionId] = newMission;
+              continue;
+            }
+
+            final preferredDocId = _userMissionDocId(userId, missionId);
+            final isNewPreferredId = doc.id == preferredDocId;
+            final isExistingPreferredId = existing.id == preferredDocId;
+
+            if (isNewPreferredId && !isExistingPreferredId) {
+              result[missionId] = newMission;
+              continue;
+            }
+
+            final newStart = newMission.startTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final existingStart = existing.startTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+            if (newStart.isAfter(existingStart)) {
+              result[missionId] = newMission;
+            }
           }
 
-          final preferredDocId = _userMissionDocId(userId, missionId);
-          final isNewPreferredId = doc.id == preferredDocId;
-          final isExistingPreferredId = existing.id == preferredDocId;
-
-          if (isNewPreferredId && !isExistingPreferredId) {
-            result[missionId] = newMission;
-            continue;
+          _userMissions = result;
+          // 디버그: 실시간 스냅샷으로부터 미션 진행도 로그
+          for (final entry in _userMissions.entries) {
+            debugPrint('📡 [listenUserMissions] missionId=${entry.key}, progress=${entry.value.progress}, completed=${entry.value.completed}');
           }
-
-          final newStart = newMission.startTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final existingStart = existing.startTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-
-          if (newStart.isAfter(existingStart)) {
-            result[missionId] = newMission;
-          }
+          notifyListeners();
+        } catch (e) {
+          debugPrint('실시간 사용자 미션 상태 처리 오류: $e');
         }
-
-        _userMissions = result;
-        // 디버그: 실시간 스냅샷으로부터 미션 진행도 로그
-        for (final entry in _userMissions.entries) {
-          debugPrint('📡 [listenUserMissions] missionId=${entry.key}, progress=${entry.value.progress}, completed=${entry.value.completed}');
+      },
+      onError: (error) {
+        debugPrint('❌ userMissions 스트림 오류: $error');
+        // 권한 오류인 경우 스트림을 재시작하지 않고, get()으로 폴백
+        if (error.toString().contains('permission-denied')) {
+          debugPrint('⚠️ 권한 오류로 인해 스트림을 중단하고 get()으로 폴백합니다.');
+          // 스트림은 중단하고, 필요시 getUserMissions()를 호출하여 수동으로 업데이트
         }
-        notifyListeners();
-      } catch (e) {
-        debugPrint('실시간 사용자 미션 상태 처리 오류: $e');
-      }
-    });
+      },
+    );
   }
 
   // 미션 시작 처리 (like_click 미션용)
@@ -2647,13 +2683,39 @@ class DataService extends ChangeNotifier {
         }
       } else {
         // 미션이 시작되지 않았으면 완료 불가
+        // 단, first_upload 미션은 userMission이 없어도 완료 가능 (자동 완료)
         if (mission.type == 'like_click') {
           debugPrint('⚠️ 미션이 시작되지 않았습니다. 미션 참가하기 버튼을 눌러 미션을 시작하세요. (userId=$userId, missionId=$missionId)');
           return false;
         }
+        // first_upload 미션의 경우 userMission이 없으면 생성
+        if (mission.type == 'first_upload') {
+          await docRef.set({
+            'userId': userId,
+            'missionId': missionId,
+            'completed': false,
+            'progress': 0,
+          }, SetOptions(merge: true));
+          debugPrint('✅ first_upload 미션 userMission 생성: $userId');
+        }
       }
 
-      // 미션 완료 기록 (고정 docId로 upsert)
+      // 코인 지급을 먼저 시도 (실패하면 미션 완료 상태를 저장하지 않음)
+      debugPrint('💰 미션 완료 - 코인 지급 시도: userId=$userId, missionId=$missionId, missionType=$missionType, reward=${mission.reward}');
+      try {
+        await addCoins(
+          userId: userId,
+          amount: mission.reward,
+          type: 'mission_$missionType',
+        );
+        debugPrint('✅ 미션 완료 - 코인 지급 완료: ${mission.reward}코인');
+      } catch (e) {
+        debugPrint('❌ 미션 완료 - 코인 지급 실패: $e');
+        debugPrint('❌ 코인 지급 실패로 인해 미션 완료 처리를 중단합니다.');
+        return false; // 코인 지급 실패 시 미션 완료 처리 중단
+      }
+
+      // 코인 지급 성공 후 미션 완료 기록 (고정 docId로 upsert)
       final updateData = <String, dynamic>{
         'userId': userId,
         'missionId': missionId,
@@ -2671,28 +2733,14 @@ class DataService extends ChangeNotifier {
         // 반복 불가 미션은 완료 시 progress를 1로 두는 기존 동작 유지
         updateData['progress'] = 1;
       }
-      await docRef.set(updateData, SetOptions(merge: true));
-
-      // 코인 지급
-      debugPrint('💰 미션 완료 - 코인 지급: userId=$userId, missionId=$missionId, missionType=$missionType, reward=${mission.reward}');
-      await addCoins(
-        userId: userId,
-        amount: mission.reward,
-        type: 'mission_$missionType',
-      );
-      debugPrint('✅ 미션 완료 - 코인 지급 완료: ${mission.reward}코인');
-
-      // 미션 완료 알림 생성
+      
       try {
-        await createOrUpdateNotification(
-          userId: userId,
-          type: 'mission_complete',
-          postId: 'mission_$missionId', // 미션 완료 알림은 postId 대신 missionId 사용
-          postTitle: mission.title,
-        );
-        debugPrint('✅ 미션 완료 알림 생성 완료: ${mission.title}');
+        await docRef.set(updateData, SetOptions(merge: true));
+        debugPrint('✅ 미션 완료 상태 저장 완료: userId=$userId, missionId=$missionId');
       } catch (e) {
-        debugPrint('미션 완료 알림 생성 오류 (무시): $e');
+        debugPrint('❌ 미션 완료 상태 저장 실패: $e');
+        // 코인은 이미 지급되었으므로, 미션 완료 상태 저장 실패는 로그만 남기고 계속 진행
+        // (다음에 다시 시도할 수 있도록)
       }
 
       // 로컬 상태 업데이트
@@ -2842,6 +2890,11 @@ class DataService extends ChangeNotifier {
   // 첫 작품 업로드 미션 체크 및 완료 처리
   Future<void> _checkAndCompleteFirstUploadMission(String userId) async {
     try {
+      // 미션 목록이 비어있으면 먼저 로드
+      if (_missions.isEmpty) {
+        await getMissions();
+      }
+      
       // 현재 업로드한 게시물 수 확인
       final snapshot = await _firestore
           .collection('posts')
@@ -2863,27 +2916,71 @@ class DataService extends ChangeNotifier {
         );
         
         if (firstUploadMission.id.isNotEmpty) {
+          // userMission이 없으면 생성
+          final userMissionId = _userMissionDocId(userId, firstUploadMission.id);
+          final userMissionRef = _firestore.collection('userMissions').doc(userMissionId);
+          
+          UserMission? userMission;
+          try {
+            final userMissionDoc = await userMissionRef.get();
+            if (userMissionDoc.exists) {
+              userMission = UserMission.fromFirestore(userMissionDoc);
+            }
+          } catch (e) {
+            debugPrint('⚠️ userMission 조회 오류 (무시하고 계속 진행): $e');
+          }
+          
+          if (userMission == null) {
+            // userMission 생성
+            try {
+              await userMissionRef.set({
+                'userId': userId,
+                'missionId': firstUploadMission.id,
+                'completed': false,
+                'progress': 0,
+              });
+              debugPrint('✅ 첫 작품 업로드 미션 userMission 생성: $userId');
+            } catch (e) {
+              debugPrint('❌ userMission 생성 오류: $e');
+              // 생성 실패해도 계속 진행 (다음에 다시 시도)
+            }
+          }
+          
           // 이미 완료했는지 확인
-          final userMission = _userMissions[firstUploadMission.id];
-          if (userMission == null || !userMission.completed) {
+          final isCompleted = userMission?.completed ?? false;
+          
+          if (!isCompleted) {
             // 미션 완료 처리
-            await completeMission(
+            final success = await completeMission(
               userId: userId,
               missionId: firstUploadMission.id,
               missionType: 'first_upload',
             );
-            debugPrint('✅ 첫 작품 업로드 미션 완료: $userId (300코인 지급)');
             
-            // 사용자 미션 상태 새로고침
-            await getUserMissions(userId);
-            
-            // UI 업데이트 (미션 목록에서 즉시 제거)
-            notifyListeners();
+            if (success) {
+              debugPrint('✅ 첫 작품 업로드 미션 완료: $userId (300코인 지급)');
+              
+              // 사용자 미션 상태 새로고침 (완료 상태 반영)
+              await getUserMissions(userId);
+              
+              // _userMissions가 업데이트되었으므로 getAvailableMissions가 즉시 반영됨
+              // UI 업데이트 (미션 목록에서 즉시 제거)
+              notifyListeners();
+              
+              debugPrint('✅ 미션 목록 UI 업데이트 완료 - 첫 작품 업로드 미션이 제거되었습니다.');
+            } else {
+              debugPrint('❌ 첫 작품 업로드 미션 완료 실패: $userId');
+            }
+          } else {
+            debugPrint('ℹ️ 이미 완료한 첫 작품 업로드 미션: $userId');
           }
+        } else {
+          debugPrint('⚠️ 첫 작품 업로드 미션을 찾을 수 없습니다.');
         }
       }
     } catch (e) {
       debugPrint('첫 작품 업로드 미션 체크 오류: $e');
+      debugPrint('스택 트레이스: ${StackTrace.current}');
     }
   }
 

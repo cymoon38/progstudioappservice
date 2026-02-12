@@ -18,7 +18,6 @@ class MissionScreen extends StatefulWidget {
 }
 
 class _MissionScreenState extends State<MissionScreen> {
-  List<Mission> _availableMissions = [];
   bool _isLoadingMissions = true;
   String? _lastUserId;
   int _completedMissionCount = 0;
@@ -34,6 +33,7 @@ class _MissionScreenState extends State<MissionScreen> {
       _listenForMissionNotifications();
     });
   }
+
 
   @override
   void dispose() {
@@ -94,6 +94,45 @@ class _MissionScreenState extends State<MissionScreen> {
     }
   }
 
+  // 동기적으로 사용 가능한 미션 목록 가져오기 (Consumer 내에서 사용)
+  List<Mission> _getAvailableMissionsSync(DataService dataService, AuthService authService) {
+    try {
+      if (authService.user == null) {
+        // 로그인하지 않은 경우 첫 작품 업로드 미션만 표시
+        return dataService.missions.where((m) => m.type == 'first_upload').toList();
+      }
+
+      final List<Mission> result = [];
+      
+      // 표시할 미션 타입 목록
+      final allowedMissionTypes = ['first_upload', 'like_click'];
+      
+      // 모든 미션 필터링
+      for (final mission in dataService.missions) {
+        // 허용된 미션 타입만 표시
+        if (!allowedMissionTypes.contains(mission.type)) {
+          continue;
+        }
+        
+        // 첫 작품 업로드 미션 필터링
+        if (mission.type == 'first_upload') {
+          final userMission = dataService.userMissions[mission.id];
+          // 완료한 first_upload 미션은 표시하지 않음
+          if (userMission != null && userMission.completed) {
+            continue;
+          }
+        }
+        
+        result.add(mission);
+      }
+      
+      return result;
+    } catch (e) {
+      debugPrint('동기 미션 목록 가져오기 오류: $e');
+      return [];
+    }
+  }
+
   Future<void> _loadMissions() async {
     try {
       final dataService = Provider.of<DataService>(context, listen: false);
@@ -119,16 +158,6 @@ class _MissionScreenState extends State<MissionScreen> {
         }
       }
       
-      // 사용자에게 표시할 미션 목록 가져오기
-      final availableMissions = await dataService.getAvailableMissions(authService.user?.uid);
-      
-      // popular_selected 미션의 reward 확인
-      for (var mission in availableMissions) {
-        if (mission.type == 'popular_selected') {
-          debugPrint('📋 UI에 표시될 popular_selected 미션: reward=${mission.reward}');
-        }
-      }
-      
       // 완료한 미션 수와 획득한 코인 수 가져오기 (coinHistory 기반)
       int completedCount = 0;
       int totalReward = 0;
@@ -143,7 +172,6 @@ class _MissionScreenState extends State<MissionScreen> {
       
       if (mounted) {
         setState(() {
-          _availableMissions = availableMissions;
           _completedMissionCount = completedCount;
           _totalMissionReward = totalReward;
           _isLoadingMissions = false;
@@ -154,7 +182,6 @@ class _MissionScreenState extends State<MissionScreen> {
       if (mounted) {
         setState(() {
           _isLoadingMissions = false;
-          _availableMissions = [];
         });
       }
     }
@@ -285,12 +312,12 @@ class _MissionScreenState extends State<MissionScreen> {
                             await _loadMissions();
                           } else {
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('미션 시작에 실패했습니다.'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('미션 시작에 실패했습니다.'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
                             }
                           }
                         },
@@ -524,47 +551,60 @@ class _MissionScreenState extends State<MissionScreen> {
                             ),
                           ),
                           const SizedBox(height: 24),
-                          if (_isLoadingMissions)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(48),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const CircularProgressIndicator(),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      '미션을 불러오는 중...',
+                          Builder(
+                            builder: (context) {
+                              // Consumer 내에서 실시간으로 미션 목록 가져오기
+                              final availableMissions = _isLoadingMissions 
+                                  ? <Mission>[]
+                                  : _getAvailableMissionsSync(dataService, authService);
+                              
+                              if (_isLoadingMissions) {
+                                return Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(48),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const CircularProgressIndicator(),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          '미션을 불러오는 중...',
+                                          style: TextStyle(
+                                            color: AppTheme.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+                              
+                              if (availableMissions.isEmpty) {
+                                return Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(48),
+                                    child: Text(
+                                      '진행 가능한 미션이 없습니다.',
                                       style: TextStyle(
                                         color: AppTheme.textSecondary,
                                       ),
                                     ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          else if (_availableMissions.isEmpty)
-                            Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(48),
-                                child: Text(
-                                  '진행 가능한 미션이 없습니다.',
-                                  style: TextStyle(
-                                    color: AppTheme.textSecondary,
                                   ),
-                                ),
-                              ),
-                            )
-                          else
-                            ..._availableMissions.map((mission) {
+                                );
+                              }
+                              
+                              return Column(
+                                children: availableMissions.map((mission) {
                               final userMission = dataService.userMissions[mission.id];
                               final isCompleted = userMission?.completed ?? false;
                               final progress = userMission?.progress ?? 0;
                               final targetCount = mission.targetCount ?? 1;
+                              // 미션을 시작했는지 확인 (startTime이 있어야 진행도 표시)
+                              final hasStarted = userMission?.startTime != null;
                               final progressPercent = (progress / targetCount).clamp(0.0, 1.0);
 
                               // 디버그: UI에서 사용 중인 미션 진행도 로그
-                              debugPrint('🧩 [MissionScreen] missionId=${mission.id}, type=${mission.type}, uiProgress=$progress/$targetCount, completed=$isCompleted');
+                              debugPrint('🧩 [MissionScreen] missionId=${mission.id}, type=${mission.type}, uiProgress=$progress/$targetCount, completed=$isCompleted, hasStarted=$hasStarted');
 
                               return _MissionCard(
                                 mission: mission,
@@ -572,6 +612,7 @@ class _MissionScreenState extends State<MissionScreen> {
                                 progress: progress,
                                 targetCount: targetCount,
                                 progressPercent: progressPercent,
+                                hasStarted: hasStarted,
                                 onTap: authService.user != null && mission.type != 'first_upload'
                                     ? () async {
                                         // 첫 작품 업로드 미션은 수동 완료 불가 (자동 완료만 가능)
@@ -627,7 +668,10 @@ class _MissionScreenState extends State<MissionScreen> {
                                         ? () => _showTimeLimitedMissionPopup(context, mission)
                                         : null,
                               );
-                            }).toList(),
+                                }).toList(),
+                              );
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -690,6 +734,7 @@ class _MissionCard extends StatelessWidget {
   final int progress;
   final int targetCount;
   final double progressPercent;
+  final bool hasStarted;
   final VoidCallback? onTap;
   final VoidCallback? onRewardTap;
 
@@ -699,6 +744,7 @@ class _MissionCard extends StatelessWidget {
     required this.progress,
     required this.targetCount,
     required this.progressPercent,
+    required this.hasStarted,
     this.onTap,
     this.onRewardTap,
   });
@@ -747,7 +793,8 @@ class _MissionCard extends StatelessWidget {
                           ),
                         ),
                       ],
-                      if (targetCount > 1 && !isCompleted) ...[
+                      // 미션을 시작했고 완료하지 않았을 때만 진행도 표시
+                      if (targetCount > 1 && !isCompleted && hasStarted) ...[
                         const SizedBox(height: 8),
                         Padding(
                           padding: const EdgeInsets.only(left: 20),
@@ -785,9 +832,9 @@ class _MissionCard extends StatelessWidget {
                   onTap: onRewardTap != null
                       ? () {
                           // 이벤트 전파 방지 및 중복 클릭 방지
-                          if (onRewardTap != null) {
-                            onRewardTap!();
-                          }
+                    if (onRewardTap != null) {
+                      onRewardTap!();
+                    }
                         }
                       : null,
                   child: Container(
