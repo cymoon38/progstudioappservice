@@ -202,3 +202,4 @@ match /ownedGiftCards/{giftCardId} {
 2. 구매 기능은 상세보기 화면 완성 후 구현
 3. 보유중 탭은 구매 기능 완성 후 구현
 
+

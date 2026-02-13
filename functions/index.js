@@ -40,9 +40,12 @@ function getTodayDateString() {
 async function getPostAuthors(posts) {
   const authorUids = new Set();
   
+  console.log(`🔍 게시물 작성자 UID 찾기 시작 (게시물 수: ${posts.length})`);
+  
   for (const post of posts) {
     if (post.authorUid && post.authorUid.length > 0) {
       authorUids.add(post.authorUid);
+      console.log(`  ✅ authorUid로 찾음: ${post.authorUid} (게시물: ${post.id})`);
     } else if (post.author && post.author.length > 0) {
       // authorUid가 없으면 author 이름으로 UID 찾기
       try {
@@ -53,32 +56,46 @@ async function getPostAuthors(posts) {
             .get();
         
         if (!userQuery.empty) {
-          authorUids.add(userQuery.docs[0].id);
+          const foundUid = userQuery.docs[0].id;
+          authorUids.add(foundUid);
+          console.log(`  ✅ 이름으로 찾음: ${post.author} -> ${foundUid} (게시물: ${post.id})`);
+        } else {
+          console.warn(`  ⚠️ 사용자를 찾을 수 없음: ${post.author} (게시물: ${post.id})`);
         }
       } catch (e) {
-        console.error(`사용자 UID 찾기 오류: ${e} (author: ${post.author})`);
+        console.error(`  ❌ 사용자 UID 찾기 오류: ${e} (author: ${post.author}, 게시물: ${post.id})`);
       }
+    } else {
+      console.warn(`  ⚠️ authorUid와 author가 모두 없음 (게시물: ${post.id})`);
     }
   }
   
+  console.log(`🔍 게시물 작성자 UID 찾기 완료 (총 ${authorUids.size}명)`);
   return authorUids;
 }
 
 // 코인 지급
 async function addCoins(userId, amount, type, notificationMessage = null) {
   try {
+    console.log(`💰 코인 지급 시작: userId=${userId}, amount=${amount}, type=${type}`);
+    
     const userRef = db.collection('users').doc(userId);
     const userDoc = await userRef.get();
     
     if (!userDoc.exists) {
-      throw new Error(`사용자 문서가 없습니다: ${userId}`);
+      const error = `사용자 문서가 없습니다: ${userId}`;
+      console.error(`❌ ${error}`);
+      throw new Error(error);
     }
     
     const userData = userDoc.data();
     const currentCoins = userData.coins || 0;
     const newCoins = currentCoins + amount;
     
+    console.log(`💰 코인 업데이트: ${currentCoins} -> ${newCoins} (${amount} 추가)`);
+    
     await userRef.update({ coins: newCoins });
+    console.log(`✅ 코인 업데이트 완료`);
     
     await db.collection('coinHistory').add({
       userId: userId,
@@ -86,6 +103,7 @@ async function addCoins(userId, amount, type, notificationMessage = null) {
       type: type,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
     });
+    console.log(`✅ 코인 히스토리 추가 완료`);
     
     // 알림 생성
     if (notificationMessage) {
@@ -99,16 +117,17 @@ async function addCoins(userId, amount, type, notificationMessage = null) {
           amount: amount,
           rewardType: type,
         });
-        console.log(`🔔 알림 생성: ${userId} - ${notificationMessage}`);
+        console.log(`🔔 알림 생성 완료: ${userId} - ${notificationMessage}`);
       } catch (e) {
-        console.error(`알림 생성 오류 (무시): ${e}`);
+        console.error(`⚠️ 알림 생성 오류 (무시): ${e}`);
       }
     }
     
-    console.log(`✅ 코인 지급 완료: ${userId} - ${amount}코인 (${type})`);
+    console.log(`✅ 코인 지급 완료: ${userId} - ${amount}코인 (${type}), 총 ${newCoins}코인`);
     return newCoins;
   } catch (e) {
-    console.error(`코인 지급 오류: ${e}`);
+    console.error(`❌ 코인 지급 오류: ${e}`);
+    console.error(`❌ 코인 지급 오류 스택: ${e.stack}`);
     throw e;
   }
 }
@@ -164,26 +183,68 @@ async function runLottery() {
     
     console.log(`📅 추첨 대상 기간: 어제 오후 5시 (${yesterday5PMUTC.toISOString()}) ~ 오늘 오후 5시 (${today5PMUTC.toISOString()})`);
     console.log(`📅 한국 시간 기준: ${yesterday5PMKoreaStr.replace('T', ' ').replace('+09:00', '')} ~ ${today5PMKoreaStr.replace('T', ' ').replace('+09:00', '')}`);
+    console.log(`📅 Firestore Timestamp: startTime=${startTime.toMillis()}, endTime=${endTime.toMillis()}`);
+    
+    // 디버깅: 전체 게시물 수 확인
+    const allPostsSnapshot = await db.collection('posts').limit(10).get();
+    console.log(`📊 전체 게시물 샘플 (최대 10개):`);
+    allPostsSnapshot.docs.forEach((doc, index) => {
+      const data = doc.data();
+      console.log(`  게시물 ${index + 1}: id=${doc.id}, date=${data.date?.toDate?.()?.toISOString() || data.date}, isPopular=${data.isPopular}, type=${data.type}, author=${data.author}`);
+    });
+    
+    // 디버깅: 시간 범위 내 전체 게시물 확인
+    const timeRangePostsSnapshot = await db
+        .collection('posts')
+        .where('date', '>=', startTime)
+        .where('date', '<', endTime)
+        .limit(10)
+        .get();
+    console.log(`📊 시간 범위 내 게시물 수: ${timeRangePostsSnapshot.size}`);
+    timeRangePostsSnapshot.docs.forEach((doc, index) => {
+      const data = doc.data();
+      console.log(`  시간 범위 내 게시물 ${index + 1}: id=${doc.id}, date=${data.date?.toDate?.()?.toISOString() || data.date}, isPopular=${data.isPopular}, type=${data.type}`);
+    });
     
     // 1. 인기작품에서 먼저 추첨 (어제 오후 5시 ~ 오늘 오후 5시 사이 게시물)
-    const popularPostsSnapshot = await db
+    // 주의: type != 'notice'와 date 범위 필터를 함께 사용하면 복합 인덱스가 필요하므로
+    // 먼저 시간 범위 내 모든 게시물을 가져온 후 클라이언트 측에서 필터링
+    const allTimeRangePostsForPopularSnapshot = await db
         .collection('posts')
-        .where('isPopular', '==', true)
-        .where('type', '!=', 'notice') // 공지사항 제외
         .where('date', '>=', startTime) // 어제 오후 5시 이후
         .where('date', '<', endTime) // 오늘 오후 5시 이전
         .get();
     
+    console.log(`📊 시간 범위 내 전체 게시물 수 (인기작품 필터링 전): ${allTimeRangePostsForPopularSnapshot.size}개`);
+    
+    // 클라이언트 측에서 isPopular == true이고 type != 'notice'인 게시물 필터링
+    const popularPostsSnapshot = {
+      docs: allTimeRangePostsForPopularSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        return data.isPopular === true && data.type !== 'notice';
+      })
+    };
+    
+    console.log(`📊 인기작품 쿼리 결과 (원본): ${popularPostsSnapshot.docs.length}개`);
+    
     const popularPosts = popularPostsSnapshot.docs
-        .map(doc => ({
-          id: doc.id,
-          author: doc.data().author || '',
-          authorUid: doc.data().authorUid || null,
-          type: doc.data().type || null,
-        }))
+        .map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            author: data.author || '',
+            authorUid: data.authorUid || null,
+            type: data.type || null,
+            date: data.date,
+            isPopular: data.isPopular,
+          };
+        })
         .filter(post => post.authorUid || post.author);
     
-    console.log(`📊 인기작품 수: ${popularPosts.length}`);
+    console.log(`📊 인기작품 수 (작성자 필터링 후): ${popularPosts.length}`);
+    if (popularPosts.length > 0) {
+      console.log(`📊 인기작품 샘플:`, popularPosts.slice(0, 3).map(p => ({ id: p.id, author: p.author, authorUid: p.authorUid })));
+    }
     
     let popularWinnerUid = null;
     let popularWinnerName = null;
@@ -192,20 +253,26 @@ async function runLottery() {
     if (popularPosts.length > 0) {
       const popularAuthors = await getPostAuthors(popularPosts);
       console.log(`📊 인기작품 작성자 수: ${popularAuthors.size}`);
+      console.log(`📊 인기작품 작성자 UID 목록: ${Array.from(popularAuthors).join(', ')}`);
       
       if (popularAuthors.size > 0) {
         const winnerList = Array.from(popularAuthors);
         const winnerIndex = Math.floor(Math.random() * winnerList.length);
         popularWinnerUid = winnerList[winnerIndex];
+        console.log(`🎯 인기작품 당첨자 UID 선택: ${popularWinnerUid}`);
         
         // 당첨자 이름 찾기
         try {
           const winnerDoc = await db.collection('users').doc(popularWinnerUid).get();
           if (winnerDoc.exists) {
             popularWinnerName = winnerDoc.data().name || '알 수 없음';
+            console.log(`✅ 당첨자 이름 찾기 성공: ${popularWinnerName}`);
+          } else {
+            console.warn(`⚠️ 당첨자 문서가 존재하지 않음: ${popularWinnerUid}`);
+            popularWinnerName = '알 수 없음';
           }
         } catch (e) {
-          console.error(`당첨자 이름 찾기 오류: ${e}`);
+          console.error(`❌ 당첨자 이름 찾기 오류: ${e}`);
           popularWinnerName = '알 수 없음';
         }
         
@@ -215,39 +282,74 @@ async function runLottery() {
         if (winnerPosts.length > 0) {
           const postIndex = Math.floor(Math.random() * winnerPosts.length);
           popularWinnerPostId = winnerPosts[postIndex].id;
+          console.log(`📝 당첨자 게시물 선택: ${popularWinnerPostId}`);
+        } else {
+          console.warn(`⚠️ 당첨자의 인기작품을 찾을 수 없음`);
         }
         
         // 인기작품 당첨자에게 500코인 지급
-        await addCoins(
-          popularWinnerUid, 
-          500, 
-          '오늘의 당첨자 보상',
-          `${popularWinnerName}님, 오늘의 당첨자 보상으로 500코인을 받았습니다!`
-        );
-        console.log(`🎉 인기작품 추첨 당첨자: ${popularWinnerName} (${popularWinnerUid}) - 게시물: ${popularWinnerPostId} - 500코인 지급`);
+        try {
+          await addCoins(
+            popularWinnerUid, 
+            500, 
+            '오늘의 당첨자 보상',
+            `${popularWinnerName}님, 오늘의 당첨자 보상으로 500코인을 받았습니다!`
+          );
+          console.log(`🎉 인기작품 추첨 당첨자: ${popularWinnerName} (${popularWinnerUid}) - 게시물: ${popularWinnerPostId} - 500코인 지급 완료`);
+        } catch (e) {
+          console.error(`❌ 인기작품 당첨자 코인 지급 실패: ${e}`);
+          // 코인 지급 실패해도 결과는 저장
+        }
+      } else {
+        console.log(`⚠️ 인기작품 작성자가 없어 인기작품 당첨자를 선택할 수 없습니다.`);
       }
+    } else {
+      console.log(`⚠️ 인기작품이 없어 인기작품 추첨을 건너뜁니다.`);
     }
     
     // 2. 일반 작품에서 추첨 (인기작품 당첨자 제외, 어제 오후 5시 ~ 오늘 오후 5시 사이 게시물)
-    const generalPostsSnapshot = await db
+    // 주의: type != 'notice'와 date 범위 필터를 함께 사용하면 복합 인덱스가 필요하므로
+    // 먼저 시간 범위 내 모든 게시물을 가져온 후 클라이언트 측에서 필터링
+    const allTimeRangePostsSnapshot = await db
         .collection('posts')
-        .where('isPopular', '==', false) // 인기작품이 아닌 것
-        .where('type', '!=', 'notice') // 공지사항 제외
         .where('date', '>=', startTime) // 어제 오후 5시 이후
         .where('date', '<', endTime) // 오늘 오후 5시 이전
         .get();
     
+    console.log(`📊 시간 범위 내 전체 게시물 수 (필터링 전): ${allTimeRangePostsSnapshot.size}`);
+    
+    // 클라이언트 측에서 isPopular과 type 필터링
+    // isPopular이 false이거나 없고, type이 'notice'가 아닌 게시물
+    const generalPostsSnapshot = {
+      docs: allTimeRangePostsSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        const isPopular = data.isPopular;
+        const type = data.type;
+        // isPopular이 false이거나 undefined/null이고, type이 'notice'가 아닌 경우
+        return isPopular !== true && type !== 'notice';
+      })
+    };
+    
+    console.log(`📊 일반작품 쿼리 결과 (원본): ${generalPostsSnapshot.docs.length}개`);
+    
     const generalPosts = generalPostsSnapshot.docs
-        .map(doc => ({
-          id: doc.id,
-          author: doc.data().author || '',
-          authorUid: doc.data().authorUid || null,
-          type: doc.data().type || null,
-          isPopular: doc.data().isPopular || false,
-        }))
+        .map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            author: data.author || '',
+            authorUid: data.authorUid || null,
+            type: data.type || null,
+            isPopular: data.isPopular || false,
+            date: data.date,
+          };
+        })
         .filter(post => post.authorUid || post.author);
     
-    console.log(`📊 일반작품 수: ${generalPosts.length}`);
+    console.log(`📊 일반작품 수 (작성자 필터링 후): ${generalPosts.length}`);
+    if (generalPosts.length > 0) {
+      console.log(`📊 일반작품 샘플:`, generalPosts.slice(0, 3).map(p => ({ id: p.id, author: p.author, authorUid: p.authorUid, isPopular: p.isPopular })));
+    }
     
     let normalWinnerUid = null;
     let normalWinnerName = null;
@@ -256,6 +358,8 @@ async function runLottery() {
     if (generalPosts.length > 0) {
       
       const allAuthors = await getPostAuthors(generalPosts);
+      console.log(`📊 일반작품 전체 작성자 수: ${allAuthors.size}`);
+      console.log(`📊 일반작품 전체 작성자 UID 목록: ${Array.from(allAuthors).join(', ')}`);
       
       // 인기작품 당첨자 제외
       const normalAuthors = popularWinnerUid
@@ -263,19 +367,25 @@ async function runLottery() {
           : Array.from(allAuthors);
       
       console.log(`📊 일반작품 작성자 수 (인기작품 당첨자 제외): ${normalAuthors.length}`);
+      console.log(`📊 일반작품 작성자 UID 목록 (인기작품 당첨자 제외): ${normalAuthors.join(', ')}`);
       
       if (normalAuthors.length > 0) {
         const winnerIndex = Math.floor(Math.random() * normalAuthors.length);
         normalWinnerUid = normalAuthors[winnerIndex];
+        console.log(`🎯 일반작품 당첨자 UID 선택: ${normalWinnerUid}`);
         
         // 당첨자 이름 찾기
         try {
           const winnerDoc = await db.collection('users').doc(normalWinnerUid).get();
           if (winnerDoc.exists) {
             normalWinnerName = winnerDoc.data().name || '알 수 없음';
+            console.log(`✅ 당첨자 이름 찾기 성공: ${normalWinnerName}`);
+          } else {
+            console.warn(`⚠️ 당첨자 문서가 존재하지 않음: ${normalWinnerUid}`);
+            normalWinnerName = '알 수 없음';
           }
         } catch (e) {
-          console.error(`당첨자 이름 찾기 오류: ${e}`);
+          console.error(`❌ 당첨자 이름 찾기 오류: ${e}`);
           normalWinnerName = '알 수 없음';
         }
         
@@ -286,21 +396,33 @@ async function runLottery() {
         if (winnerPosts.length > 0) {
           const postIndex = Math.floor(Math.random() * winnerPosts.length);
           normalWinnerPostId = winnerPosts[postIndex].id;
+          console.log(`📝 당첨자 게시물 선택: ${normalWinnerPostId}`);
+        } else {
+          console.warn(`⚠️ 당첨자의 일반작품을 찾을 수 없음`);
         }
         
         // 일반작품 당첨자에게 300코인 지급
-        await addCoins(
-          normalWinnerUid, 
-          300, 
-          '오늘의 당첨자 보상',
-          `${normalWinnerName}님, 오늘의 당첨자 보상으로 300코인을 받았습니다!`
-        );
-        console.log(`🎉 일반작품 추첨 당첨자: ${normalWinnerName} (${normalWinnerUid}) - 게시물: ${normalWinnerPostId} - 300코인 지급`);
+        try {
+          await addCoins(
+            normalWinnerUid, 
+            300, 
+            '오늘의 당첨자 보상',
+            `${normalWinnerName}님, 오늘의 당첨자 보상으로 300코인을 받았습니다!`
+          );
+          console.log(`🎉 일반작품 추첨 당첨자: ${normalWinnerName} (${normalWinnerUid}) - 게시물: ${normalWinnerPostId} - 300코인 지급 완료`);
+        } catch (e) {
+          console.error(`❌ 일반작품 당첨자 코인 지급 실패: ${e}`);
+          // 코인 지급 실패해도 결과는 저장
+        }
+      } else {
+        console.log(`⚠️ 일반작품 작성자가 없어 일반작품 당첨자를 선택할 수 없습니다.`);
       }
+    } else {
+      console.log(`⚠️ 일반작품이 없어 일반작품 추첨을 건너뜁니다.`);
     }
     
     // 추첨 결과 저장
-    await db.collection('lotteryResults').doc(today).set({
+    const lotteryResult = {
       date: today,
       popularWinner: popularWinnerUid ? {
         userId: popularWinnerUid,
@@ -315,9 +437,17 @@ async function runLottery() {
         reward: 300,
       } : null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    };
     
-    console.log('✅ 추첨 완료 및 결과 저장');
+    console.log(`💾 추첨 결과 저장 중...`, JSON.stringify(lotteryResult, null, 2));
+    
+    try {
+      await db.collection('lotteryResults').doc(today).set(lotteryResult);
+      console.log('✅ 추첨 완료 및 결과 저장 성공');
+    } catch (e) {
+      console.error(`❌ 추첨 결과 저장 실패: ${e}`);
+      throw e; // 저장 실패는 치명적 오류이므로 throw
+    }
     
     return {
       popularWinner: popularWinnerUid ? {
@@ -347,11 +477,14 @@ exports.runDailyLottery = functions.pubsub
       try {
         const result = await runLottery();
         if (result) {
-          console.log(`🎉 추첨 완료: 인기작품 당첨자=${result.popularWinner?.name}, 일반작품 당첨자=${result.normalWinner?.name}`);
+          console.log(`🎉 추첨 완료: 인기작품 당첨자=${result.popularWinner?.name || '없음'}, 일반작품 당첨자=${result.normalWinner?.name || '없음'}`);
+        } else {
+          console.log(`⚠️ 추첨 결과가 null입니다. 이미 실행되었거나 당첨자가 없을 수 있습니다.`);
         }
         return null;
       } catch (e) {
-        console.error(`추첨 실행 오류: ${e}`);
+        console.error(`❌ 추첨 실행 오류: ${e}`);
+        console.error(`❌ 오류 스택: ${e.stack}`);
         throw e;
       }
     });
@@ -633,49 +766,180 @@ exports.getGiftCardList = functions.https.onCall(async (data, context) => {
 
 // 상품 상세 정보 조회
 exports.getGiftCardDetail = functions.https.onCall(async (data, context) => {
+  console.log('🔍 getGiftCardDetail 함수 호출 시작');
+  console.log('📥 받은 데이터:', JSON.stringify(data, null, 2));
+  console.log('📥 데이터 타입:', typeof data);
+  console.log('📥 context.auth:', context.auth ? `uid: ${context.auth.uid}` : 'null');
+  
   try {
+    // 데이터 검증
+    if (!data) {
+      console.error('❌ data가 null 또는 undefined입니다.');
+      throw new functions.https.HttpsError('invalid-argument', '데이터가 필요합니다.');
+    }
+    
     const goodsCode = data.goodsCode;
+    console.log(`📦 goodsCode: ${goodsCode} (타입: ${typeof goodsCode})`);
+    
     if (!goodsCode) {
+      console.error('❌ goodsCode가 없습니다.');
+      console.error('📋 전체 data 객체:', JSON.stringify(data, null, 2));
       throw new functions.https.HttpsError('invalid-argument', '상품 코드가 필요합니다.');
     }
 
+    if (typeof goodsCode !== 'string' || goodsCode.trim().length === 0) {
+      console.error('❌ goodsCode가 유효한 문자열이 아닙니다.');
+      throw new functions.https.HttpsError('invalid-argument', '유효한 상품 코드가 필요합니다.');
+    }
+
     // Secret 값은 런타임에만 접근 가능
+    console.log('🔑 인증 정보 가져오기 시작...');
     const authCode = getSecret('GIFTSHOWBIZ_AUTH_CODE');
     const authToken = getSecret('GIFTSHOWBIZ_AUTH_TOKEN');
+    
+    console.log(`🔑 authCode 존재: ${!!authCode} (길이: ${authCode ? authCode.length : 0})`);
+    console.log(`🔑 authToken 존재: ${!!authToken} (길이: ${authToken ? authToken.length : 0})`);
 
     if (!authCode || !authToken) {
+      console.error('❌ API 인증 정보를 가져올 수 없습니다.');
+      console.error(`   authCode: ${authCode ? '존재' : '없음'}`);
+      console.error(`   authToken: ${authToken ? '존재' : '없음'}`);
       throw new functions.https.HttpsError('internal', 'API 인증 정보를 가져올 수 없습니다.');
     }
 
-    const response = await axios.post(
-      `${GIFTSHOWBIZ_BASE_URL}/goods/${goodsCode}`,
-      {
-        api_code: '0111',
-        custom_auth_code: authCode,
-        custom_auth_token: authToken,
-        dev_yn: 'N', // 상용 환경
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
+    // API URL 확인 (goodsCode를 URL에 포함할지 본문에 포함할지 확인 필요)
+    // 일단 getGiftCardList와 동일하게 form-urlencoded 형식 사용
+    const apiUrl = `${GIFTSHOWBIZ_BASE_URL}/goods/${goodsCode}`;
+    console.log(`📞 Giftshowbiz API 호출 시작`);
+    console.log(`   URL: ${apiUrl}`);
+    console.log(`   goodsCode: ${goodsCode}`);
+    
+    // form-urlencoded 형식으로 요청 (getGiftCardList와 동일)
+    const formData = new URLSearchParams();
+    formData.append('api_code', '0111');
+    formData.append('custom_auth_code', authCode.trim());
+    formData.append('custom_auth_token', authToken.trim());
+    formData.append('dev_yn', 'N'); // 상용 환경
+    formData.append('goodsCode', String(goodsCode).trim()); // 필수 파라미터
+    
+    console.log(`📤 Form Data:`, formData.toString());
+    console.log(`📤 각 파라미터 확인:`, {
+      api_code: '0111',
+      custom_auth_code: authCode.trim().substring(0, 10) + '...',
+      custom_auth_token: authToken.trim().substring(0, 10) + '...',
+      dev_yn: 'N',
+      goodsCode: String(goodsCode).trim(),
+    });
+    
+    // 모든 필수 파라미터가 비어있지 않은지 확인
+    if (!authCode || authCode.trim() === '') {
+      console.error('❌ custom_auth_code가 비어있습니다.');
+      throw new functions.https.HttpsError('internal', 'custom_auth_code가 비어있습니다.');
+    }
+    if (!authToken || authToken.trim() === '') {
+      console.error('❌ custom_auth_token이 비어있습니다.');
+      throw new functions.https.HttpsError('internal', 'custom_auth_token이 비어있습니다.');
+    }
+    if (!goodsCode || String(goodsCode).trim() === '') {
+      console.error('❌ goodsCode가 비어있습니다.');
+      throw new functions.https.HttpsError('invalid-argument', 'goodsCode가 비어있습니다.');
+    }
+    
+    let response;
+    try {
+      response = await axios.post(
+        apiUrl,
+        formData.toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          timeout: 30000, // 30초 타임아웃
+        }
+      );
+      console.log(`✅ API 응답 받음 (상태 코드: ${response.status})`);
+    } catch (axiosError) {
+      console.error('❌ axios 요청 실패:', axiosError.message);
+      if (axiosError.response) {
+        console.error('   응답 상태:', axiosError.response.status);
+        console.error('   응답 데이터:', JSON.stringify(axiosError.response.data, null, 2));
+      } else if (axiosError.request) {
+        console.error('   요청은 전송되었지만 응답을 받지 못함');
       }
-    );
+      throw axiosError;
+    }
 
+    console.log(`📥 API 응답 코드: ${response.data.code}`);
+    console.log(`📥 API 응답 메시지: ${response.data.message || '없음'}`);
+    console.log(`📥 API 응답 전체 구조:`, JSON.stringify(response.data, null, 2));
+    
+    if (!response.data) {
+      console.error('❌ API 응답 데이터가 없습니다.');
+      throw new functions.https.HttpsError('internal', 'API 응답 데이터가 없습니다.');
+    }
+    
     if (response.data.code === '0000') {
-      return {
+      console.log('✅ API 응답 성공 (code: 0000)');
+      console.log('📋 response.data.result 존재:', !!response.data.result);
+      console.log('📋 response.data.result 타입:', typeof response.data.result);
+      
+      const goodsDetail = response.data.result?.goodsDetail || response.data.result || null;
+      console.log(`✅ goodsDetail 추출 시도`);
+      console.log(`   response.data.result?.goodsDetail: ${response.data.result?.goodsDetail ? '존재' : '없음'}`);
+      console.log(`   response.data.result: ${response.data.result ? '존재' : '없음'}`);
+      console.log(`   최종 goodsDetail: ${goodsDetail ? '존재' : 'null'}`);
+      
+      if (goodsDetail) {
+        console.log(`📋 goodsDetail 타입: ${typeof goodsDetail}`);
+        if (typeof goodsDetail === 'object') {
+          console.log(`📋 goodsDetail 키 목록:`, Object.keys(goodsDetail));
+          console.log(`📋 goodsDetail 전체 내용:`, JSON.stringify(goodsDetail, null, 2));
+        } else {
+          console.log(`📋 goodsDetail 값:`, goodsDetail);
+        }
+      } else {
+        console.warn('⚠️ goodsDetail이 null입니다.');
+        console.warn('📋 response.data 전체:', JSON.stringify(response.data, null, 2));
+      }
+      
+      const returnData = {
         success: true,
-        goodsDetail: response.data.result?.goodsDetail || null,
+        goodsDetail: goodsDetail,
       };
+      console.log('✅ 반환 데이터 준비 완료');
+      console.log('📤 반환 데이터:', JSON.stringify(returnData, null, 2));
+      return returnData;
     } else {
-      return {
+      console.error(`❌ API 오류 응답`);
+      console.error(`   코드: ${response.data.code}`);
+      console.error(`   메시지: ${response.data.message || '알 수 없는 오류'}`);
+      const errorData = {
         success: false,
         error: response.data.message || '알 수 없는 오류',
+        code: response.data.code,
       };
+      console.log('📤 오류 응답 반환:', JSON.stringify(errorData, null, 2));
+      return errorData;
     }
-    } catch (e) {
-      console.error('상품 상세 조회 오류:', e);
-      throw new functions.https.HttpsError('internal', '상품 상세 조회 실패', e.message);
+  } catch (e) {
+    console.error('❌ 상품 상세 조회 오류 발생');
+    console.error('   오류 타입:', e.constructor.name);
+    console.error('   오류 메시지:', e.message);
+    console.error('   오류 스택:', e.stack);
+    
+    if (e instanceof functions.https.HttpsError) {
+      console.error('   HttpsError로 재던지기');
+      throw e;
+    } else if (e.response) {
+      console.error('   axios 응답 오류:', JSON.stringify(e.response.data, null, 2));
+      throw new functions.https.HttpsError('internal', `API 호출 실패: ${e.message}`, e.response.data);
+    } else if (e.request) {
+      console.error('   요청은 전송되었지만 응답을 받지 못함');
+      throw new functions.https.HttpsError('internal', 'API 서버에 연결할 수 없습니다.', e.message);
+    } else {
+      console.error('   알 수 없는 오류');
+      throw new functions.https.HttpsError('internal', `상품 상세 조회 실패: ${e.message}`, e.message);
     }
+  }
 });
 

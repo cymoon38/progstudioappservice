@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
+import 'giftcard_detail_screen.dart';
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
@@ -499,13 +500,26 @@ class _GiftCardItem extends StatelessWidget {
     final imageUrl = giftCard.goodsimg;
     debugPrint('🖼️ 이미지 URL: $imageUrl (상품: ${giftCard.goodsName})');
     
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GiftCardDetailScreen(
+              goodsCode: giftCard.goodsCode,
+              giftCard: giftCard,
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -564,7 +578,24 @@ class _GiftCardItem extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  // 가격 및 코인 아이콘 (상품명 위에 표시)
+                  // 상품명 (좌우 스크롤 가능, 한 줄)
+                  SizedBox(
+                    height: 12, // 한 줄 고정 높이
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Text(
+                        giftCard.goodsName,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          height: 1.0,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  // 가격 및 코인 아이콘 (상품명 아래에 표시)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -607,28 +638,12 @@ class _GiftCardItem extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const Spacer(),
-                  // 상품명 (좌우 스크롤 가능, 한 줄)
-                  SizedBox(
-                    height: 12, // 한 줄 고정 높이
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      child: Text(
-                        giftCard.goodsName,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          height: 1.0,
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
           ),
         ],
+      ),
       ),
     );
   }

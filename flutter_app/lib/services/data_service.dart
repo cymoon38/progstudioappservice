@@ -3370,6 +3370,67 @@ class DataService extends ChangeNotifier {
       return [];
     }
   }
+
+  // 기프티콘 상세 정보 조회
+  Future<Map<String, dynamic>?> getGiftCardDetail(String goodsCode) async {
+    try {
+      debugPrint('🔍 기프티콘 상세 정보 조회 시작... goodsCode: $goodsCode');
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('getGiftCardDetail');
+      
+      debugPrint('📞 Cloud Function 호출 중...');
+      final result = await callable.call({
+        'goodsCode': goodsCode,
+      });
+
+      debugPrint('✅ Cloud Function 응답 받음: ${result.data}');
+      debugPrint('📋 응답 데이터 타입: ${result.data.runtimeType}');
+      
+      // 안전한 타입 변환
+      final dynamic responseData = result.data;
+      if (responseData == null) {
+        debugPrint('❌ 응답 데이터가 null입니다.');
+        return null;
+      }
+      
+      // Map으로 변환 (타입 안전하게)
+      final Map<String, dynamic> data = Map<String, dynamic>.from(
+        responseData is Map ? responseData : {}
+      );
+      
+      debugPrint('📋 파싱된 데이터: $data');
+      debugPrint('📋 success 값: ${data['success']}');
+      debugPrint('📋 goodsDetail 값: ${data['goodsDetail']}');
+      debugPrint('📋 goodsDetail 타입: ${data['goodsDetail']?.runtimeType}');
+      
+      if (data['success'] == true) {
+        final dynamic goodsDetail = data['goodsDetail'];
+        if (goodsDetail != null) {
+          if (goodsDetail is Map) {
+            debugPrint('✅ 기프티콘 상세 정보 조회 성공');
+            debugPrint('📋 goodsDetail 키 목록: ${(goodsDetail as Map).keys.toList()}');
+            return Map<String, dynamic>.from(goodsDetail);
+          } else {
+            debugPrint('⚠️ goodsDetail이 Map이 아닙니다. 타입: ${goodsDetail.runtimeType}');
+            debugPrint('⚠️ goodsDetail 값: $goodsDetail');
+            // Map이 아니어도 일단 반환 시도
+            return {'rawData': goodsDetail};
+          }
+        } else {
+          debugPrint('⚠️ goodsDetail이 null입니다.');
+          debugPrint('📋 전체 응답 데이터: $data');
+          return null;
+        }
+      } else {
+        debugPrint('❌ 기프티콘 상세 정보 조회 실패: ${data['error']}');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ 기프티콘 상세 정보 조회 오류: $e');
+      debugPrint('📋 스택 트레이스: $stackTrace');
+      return null;
+    }
+  }
 }
 
 // 기프티콘 모델
