@@ -501,7 +501,7 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
       api_code: '0101',
       custom_auth_code: authCode,
       custom_auth_token: authToken,
-      dev_yn: 'N', // 상용 환경
+      dev_yn: 'N', // 운영 환경
       start: String(start),
       size: String(size),
     };
@@ -539,7 +539,7 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
     formData.append('api_code', '0101');
     formData.append('custom_auth_code', authCode.trim());
     formData.append('custom_auth_token', authToken.trim());
-    formData.append('dev_yn', 'N'); // 상용 환경
+    formData.append('dev_yn', 'N'); // 운영 환경
     formData.append('start', String(start));
     formData.append('size', String(size));
     
@@ -548,7 +548,7 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
       api_code: '0101',
       custom_auth_code: authCode.trim(),
       custom_auth_token: authToken.trim(),
-      dev_yn: 'N', // 상용 환경
+      dev_yn: 'N', // 운영 환경
       start: String(start),
       size: String(size),
     });
@@ -814,20 +814,20 @@ exports.getGiftCardDetail = functions.https.onCall(async (data, context) => {
     console.log(`   URL: ${apiUrl}`);
     console.log(`   goodsCode: ${goodsCode}`);
     
-    // form-urlencoded 형식으로 요청 (getGiftCardList와 동일)
+    // form-urlencoded 형식으로 요청
+    // goods_code는 URL에 포함되므로 파라미터로 보내지 않음
     const formData = new URLSearchParams();
     formData.append('api_code', '0111');
     formData.append('custom_auth_code', authCode.trim());
     formData.append('custom_auth_token', authToken.trim());
-    formData.append('dev_yn', 'N'); // 상용 환경
-    formData.append('goodsCode', String(goodsCode).trim()); // 필수 파라미터
+    formData.append('dev_yn', 'N'); // 운영 환경
     
     console.log(`📤 Form Data:`, formData.toString());
     console.log(`📤 각 파라미터 확인:`, {
       api_code: '0111',
       custom_auth_code: authCode.trim().substring(0, 10) + '...',
       custom_auth_token: authToken.trim().substring(0, 10) + '...',
-      dev_yn: 'N',
+      dev_yn: 'N', // 운영 환경
       goodsCode: String(goodsCode).trim(),
     });
     
@@ -940,6 +940,323 @@ exports.getGiftCardDetail = functions.https.onCall(async (data, context) => {
       console.error('   알 수 없는 오류');
       throw new functions.https.HttpsError('internal', `상품 상세 조회 실패: ${e.message}`, e.message);
     }
+  }
+});
+
+// 기프티콘 구매
+exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
+  try {
+    // 인증 확인
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    }
+
+    const userId = context.auth.uid;
+    const { goodsCode, quantity = 1 } = data;
+
+    console.log('🛒 기프티콘 구매 요청:', { userId, goodsCode, quantity });
+
+    if (!goodsCode) {
+      throw new functions.https.HttpsError('invalid-argument', '상품 코드가 필요합니다.');
+    }
+
+    // Secret 값 가져오기
+    const authCode = getSecret('GIFTSHOWBIZ_AUTH_CODE');
+    const authToken = getSecret('GIFTSHOWBIZ_AUTH_TOKEN');
+
+    if (!authCode || !authToken) {
+      throw new functions.https.HttpsError('internal', 'API 인증 정보를 가져올 수 없습니다.');
+    }
+
+    // 사용자 코인 확인
+    const userRef = admin.firestore().collection('users').doc(userId);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+    }
+
+    const userData = userDoc.data();
+    const userCoins = userData.coins || 0;
+
+    // 상품 상세 정보 조회 (가격 확인) - 직접 API 호출
+    const detailApiUrl = `${GIFTSHOWBIZ_BASE_URL}/goods/${goodsCode}`;
+    const detailFormData = new URLSearchParams();
+    detailFormData.append('api_code', '0111');
+    detailFormData.append('custom_auth_code', authCode.trim());
+    detailFormData.append('custom_auth_token', authToken.trim());
+    detailFormData.append('dev_yn', 'N'); // 운영 환경
+    // goods_code는 URL에 포함되므로 파라미터로 보내지 않음
+
+    let detailResponse;
+    try {
+      console.log('📞 상품 상세 정보 조회 API 호출:', {
+        url: detailApiUrl,
+        goodsCode: goodsCode,
+        dev_yn: 'N', // 운영 환경
+      });
+      
+      detailResponse = await axios.post(
+        detailApiUrl,
+        detailFormData.toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          timeout: 30000,
+        }
+      );
+      
+      console.log('📥 상품 상세 정보 API 응답:', {
+        status: detailResponse.status,
+        code: detailResponse.data?.code,
+        message: detailResponse.data?.message,
+        hasGoodsDetail: !!detailResponse.data?.goodsDetail,
+      });
+    } catch (error) {
+      console.error('❌ 상품 정보 조회 실패:', error.message);
+      if (error.response) {
+        console.error('   응답 상태:', error.response.status);
+        console.error('   응답 데이터:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new functions.https.HttpsError('not-found', `상품 정보를 찾을 수 없습니다. (${error.message})`);
+    }
+
+    if (!detailResponse.data) {
+      console.error('❌ API 응답 데이터가 없습니다.');
+      throw new functions.https.HttpsError('not-found', '상품 정보를 찾을 수 없습니다. (응답 데이터 없음)');
+    }
+    
+    if (detailResponse.data.code !== '0000') {
+      console.error('❌ API 오류 응답:', {
+        code: detailResponse.data.code,
+        message: detailResponse.data.message,
+      });
+      throw new functions.https.HttpsError('not-found', `상품 정보를 찾을 수 없습니다. (${detailResponse.data.message || detailResponse.data.code})`);
+    }
+    
+    if (!detailResponse.data.goodsDetail) {
+      console.error('❌ goodsDetail이 없습니다.');
+      console.error('   전체 응답:', JSON.stringify(detailResponse.data, null, 2));
+      throw new functions.https.HttpsError('not-found', '상품 정보를 찾을 수 없습니다. (goodsDetail 없음)');
+    }
+
+    const goodsDetail = detailResponse.data.goodsDetail;
+    const price = parseInt(goodsDetail.discountPrice || goodsDetail.salePrice || '0');
+    const totalPrice = price * quantity;
+
+    console.log('💰 가격 정보:', { price, quantity, totalPrice, userCoins });
+
+    // 코인 부족 확인
+    if (userCoins < totalPrice) {
+      throw new functions.https.HttpsError('failed-precondition', `코인이 부족합니다. 필요: ${totalPrice}, 보유: ${userCoins}`);
+    }
+
+    // 쿠폰 발송 요청 API 호출 (구매 = 쿠폰 발송)
+    // TR_ID 생성 (고유값, 최대 25자, 형식: service_YYYYMMDD_HHMMSS)
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '');
+    const trId = `canvas_${dateStr}_${timeStr}`.substring(0, 25);
+    
+    // 사용자 정보에서 전화번호 가져오기 (없으면 더미 값 사용)
+    // 앱 내에서 바로 바코드를 표시하므로 실제 문자 발송은 하지 않음
+    const userPhone = userData.phone || '01000000000'; // 전화번호 없으면 더미 값
+    const callbackNo = '01000000000'; // 발신번호 (설정 필요)
+    
+    const apiUrl = `${GIFTSHOWBIZ_BASE_URL}/send`;
+    const formData = new URLSearchParams();
+    formData.append('api_code', '0204'); // 쿠폰 발송 요청 API
+    formData.append('custom_auth_code', authCode.trim());
+    formData.append('custom_auth_token', authToken.trim());
+    formData.append('dev_yn', 'N'); // 운영 환경
+    formData.append('goods_code', String(goodsCode).trim());
+    formData.append('tr_id', trId);
+    formData.append('phone_no', userPhone.replace(/-/g, '')); // 수신번호 ('-' 제외, 실제 발송 안 함)
+    formData.append('callback_no', callbackNo.replace(/-/g, '')); // 발신번호 ('-' 제외)
+    formData.append('mms_title', '기프티콘'); // MMS 제목 (최대 10자, 실제 발송 안 함)
+    formData.append('mms_msg', `${goodsDetail.goodsName || '기프티콘'} 구매 완료`); // MMS 메시지 (실제 발송 안 함)
+    // gubun: 'I' (바코드 이미지 수신) - 파라미터로 추가 필요할 수 있음
+
+    console.log('📞 Giftshowbiz 쿠폰 발송 요청 API 호출:', {
+      url: apiUrl,
+      goodsCode,
+      tr_id: trId,
+      phone_no: userPhone.replace(/-/g, ''),
+      dev_yn: 'N',
+    });
+
+    let response;
+    try {
+      response = await axios.post(
+        apiUrl,
+        formData.toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          timeout: 30000,
+        }
+      );
+      console.log('✅ 쿠폰 발송 요청 API 응답 받음:', response.status);
+    } catch (axiosError) {
+      console.error('❌ 쿠폰 발송 요청 API 호출 실패:', axiosError.message);
+      if (axiosError.response) {
+        console.error('   응답 상태:', axiosError.response.status);
+        console.error('   응답 데이터:', JSON.stringify(axiosError.response.data, null, 2));
+        throw new functions.https.HttpsError('internal', `쿠폰 발송 요청 API 오류: ${axiosError.response.data.message || axiosError.message}`);
+      }
+      throw new functions.https.HttpsError('internal', `쿠폰 발송 요청 API 호출 실패: ${axiosError.message}`);
+    }
+
+    // API 응답 확인
+    if (response.data && response.data.code === '0000') {
+      // 쿠폰 발송 요청 성공 (실제 문자 발송은 하지 않음, 앱 내에서 바로 바코드 표시)
+      console.log('✅ 쿠폰 발송 요청 성공:', response.data);
+      
+      // 응답에 바로 바코드 정보가 포함되어 있는지 확인
+      let giftCardInfo = null;
+      const responseData = response.data;
+      
+      // 1차: 응답에 바로 바코드 정보가 있는지 확인
+      if (responseData.result || responseData.couponDetail || responseData.barcode) {
+        const directInfo = responseData.result || responseData.couponDetail || responseData;
+        if (directInfo.barcode || directInfo.barcodeImage || directInfo.barcodeNumber) {
+          console.log('✅ 응답에 바로 바코드 정보 포함됨');
+          giftCardInfo = directInfo;
+        }
+      }
+      
+      // 2차: tr_id로 쿠폰 상세 정보 조회 (바코드 정보 가져오기)
+      if (!giftCardInfo || (!giftCardInfo.barcode && !giftCardInfo.barcodeImage)) {
+        try {
+          const couponDetailUrl = `${GIFTSHOWBIZ_BASE_URL}/coupons`;
+          const couponDetailFormData = new URLSearchParams();
+          couponDetailFormData.append('api_code', '0201'); // 쿠폰 상세 정보 API
+          couponDetailFormData.append('custom_auth_code', authCode.trim());
+          couponDetailFormData.append('custom_auth_token', authToken.trim());
+          couponDetailFormData.append('dev_yn', 'N');
+          couponDetailFormData.append('tr_id', trId);
+          
+          console.log('📞 쿠폰 상세 정보 조회 API 호출 (바코드 정보 가져오기):', { tr_id: trId });
+          
+          const couponDetailResponse = await axios.post(
+            couponDetailUrl,
+            couponDetailFormData.toString(),
+            {
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              timeout: 30000,
+            }
+          );
+          
+          if (couponDetailResponse.data && couponDetailResponse.data.code === '0000') {
+            // 쿠폰 상세 정보는 result 필드에 있거나, 직접 응답 데이터에 있을 수 있음
+            const detailInfo = couponDetailResponse.data.result || 
+                              couponDetailResponse.data.couponDetail || 
+                              couponDetailResponse.data;
+            
+            console.log('✅ 쿠폰 상세 정보 조회 성공:', {
+              hasResult: !!couponDetailResponse.data.result,
+              hasCouponDetail: !!couponDetailResponse.data.couponDetail,
+              keys: Object.keys(detailInfo),
+            });
+            
+            giftCardInfo = detailInfo;
+          } else {
+            console.warn('⚠️ 쿠폰 상세 정보 조회 실패:', couponDetailResponse.data);
+          }
+        } catch (couponError) {
+          console.error('❌ 쿠폰 상세 정보 조회 오류:', couponError.message);
+          // 쿠폰 상세 정보 조회 실패해도 구매는 성공한 것으로 처리
+        }
+      }
+      
+      // 바코드 정보 정리 (다양한 필드명 지원)
+      if (giftCardInfo) {
+        const barcodeInfo = {
+          barcode: giftCardInfo.barcode || giftCardInfo.barcodeNumber || giftCardInfo.barcode_no || '',
+          barcodeImage: giftCardInfo.barcodeImage || giftCardInfo.barcodeImageUrl || giftCardInfo.barcode_img || giftCardInfo.barcode_image || '',
+          pinNumber: giftCardInfo.pinNumber || giftCardInfo.pin || giftCardInfo.pin_no || '',
+          expiryDate: giftCardInfo.expiryDate || giftCardInfo.expireDate || giftCardInfo.expiry_date || giftCardInfo.expire_date || '',
+          trId: trId,
+        };
+        
+        console.log('✅ 바코드 정보 추출 완료:', {
+          hasBarcode: !!barcodeInfo.barcode,
+          hasBarcodeImage: !!barcodeInfo.barcodeImage,
+          hasPin: !!barcodeInfo.pinNumber,
+          hasExpiryDate: !!barcodeInfo.expiryDate,
+        });
+        
+        giftCardInfo = barcodeInfo;
+      } else {
+        console.warn('⚠️ 바코드 정보를 찾을 수 없습니다. tr_id만 저장합니다.');
+        giftCardInfo = { trId: trId };
+      }
+
+      // 코인 차감
+      const newCoins = userCoins - totalPrice;
+      await userRef.update({ coins: newCoins });
+
+      // 구매 내역 저장
+      const purchaseData = {
+        userId,
+        goodsCode,
+        goodsName: goodsDetail.goodsName || '',
+        quantity,
+        price,
+        totalPrice,
+        purchaseDate: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'completed',
+        trId: trId, // 거래 ID 저장
+        giftCardInfo: giftCardInfo, // 쿠폰 상세 정보 (바코드 포함)
+      };
+
+      await admin.firestore().collection('purchases').add(purchaseData);
+
+      // 보유 기프티콘에 추가
+      if (giftCardInfo) {
+        const ownedGiftCardData = {
+          userId,
+          goodsCode,
+          goodsName: goodsDetail.goodsName || '',
+          purchaseDate: admin.firestore.FieldValue.serverTimestamp(),
+          trId: trId,
+          giftCardInfo: giftCardInfo,
+          status: 'active',
+        };
+        await admin.firestore().collection('ownedGiftCards').add(ownedGiftCardData);
+      }
+
+      // 코인 내역 추가
+      await admin.firestore().collection('coinHistory').add({
+        userId,
+        amount: -totalPrice,
+        type: 'giftcard_purchase',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        goodsCode,
+        goodsName: goodsDetail.goodsName || '',
+      });
+
+      return {
+        success: true,
+        message: '구매가 완료되었습니다.',
+        remainingCoins: newCoins,
+        purchaseInfo: purchaseData,
+      };
+    } else {
+      // 쿠폰 발송 실패
+      console.error('❌ 쿠폰 발송 실패:', response.data);
+      throw new functions.https.HttpsError('internal', response.data.message || '쿠폰 발송에 실패했습니다.');
+    }
+  } catch (e) {
+    console.error('❌ 기프티콘 구매 오류:', e);
+    if (e instanceof functions.https.HttpsError) {
+      throw e;
+    }
+    throw new functions.https.HttpsError('internal', `구매 처리 중 오류가 발생했습니다: ${e.message}`);
   }
 });
 

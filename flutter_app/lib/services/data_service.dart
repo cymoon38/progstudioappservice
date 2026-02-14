@@ -3372,6 +3372,66 @@ class DataService extends ChangeNotifier {
   }
 
   // 기프티콘 상세 정보 조회
+  // 기프티콘 구매
+  Future<Map<String, dynamic>?> purchaseGiftCard(String goodsCode, {int quantity = 1}) async {
+    try {
+      debugPrint('🛒 기프티콘 구매 시작: goodsCode=$goodsCode, quantity=$quantity');
+      
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('purchaseGiftCard');
+      final result = await callable.call({
+        'goodsCode': goodsCode,
+        'quantity': quantity,
+      });
+      
+      final data = result.data as Map<String, dynamic>?;
+      
+      if (data != null && data['success'] == true) {
+        debugPrint('✅ 구매 성공: ${data['message']}');
+        debugPrint('💰 남은 코인: ${data['remainingCoins']}');
+        return data;
+      } else {
+        debugPrint('❌ 구매 실패: ${data?['error'] ?? '알 수 없는 오류'}');
+        throw Exception(data?['error'] ?? '구매에 실패했습니다.');
+      }
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint('❌ 구매 함수 오류: ${e.code} - ${e.message}');
+      throw Exception(e.message ?? '구매 처리 중 오류가 발생했습니다.');
+    } catch (e) {
+      debugPrint('❌ 기프티콘 구매 오류: $e');
+      throw Exception('구매 처리 중 오류가 발생했습니다: $e');
+    }
+  }
+
+  // 보유 기프티콘 목록 조회
+  Future<List<Map<String, dynamic>>> getOwnedGiftCards(String userId) async {
+    try {
+      debugPrint('📦 보유 기프티콘 목록 조회 시작... userId: $userId');
+      
+      final snapshot = await _firestore
+          .collection('ownedGiftCards')
+          .where('userId', isEqualTo: userId)
+          .where('status', isEqualTo: 'active')
+          .orderBy('purchaseDate', descending: true)
+          .get();
+      
+      final List<Map<String, dynamic>> ownedCards = [];
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        ownedCards.add({
+          'id': doc.id,
+          ...data,
+        });
+      }
+      
+      debugPrint('✅ 보유 기프티콘 ${ownedCards.length}개 조회 완료');
+      return ownedCards;
+    } catch (e) {
+      debugPrint('❌ 보유 기프티콘 목록 조회 오류: $e');
+      return [];
+    }
+  }
+
   Future<Map<String, dynamic>?> getGiftCardDetail(String goodsCode) async {
     try {
       debugPrint('🔍 기프티콘 상세 정보 조회 시작... goodsCode: $goodsCode');

@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,6 +23,7 @@ class GiftCardDetailScreen extends StatefulWidget {
 class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
   Map<String, dynamic>? _detailData;
   bool _isLoading = true;
+  bool _isPurchasing = false;
   String? _errorMessage;
 
   @override
@@ -65,6 +67,112 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
       RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
       (Match m) => '${m[1]},',
     );
+  }
+
+  // 구매 처리
+  Future<void> _handlePurchase() async {
+    debugPrint('🛒 구매 버튼 클릭됨');
+    debugPrint('📦 goodsCode: ${widget.goodsCode}');
+    debugPrint('📋 _detailData: $_detailData');
+    
+    if (_detailData == null) {
+      debugPrint('❌ _detailData가 null입니다.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('상품 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    setState(() {
+      _isPurchasing = true;
+      _errorMessage = null;
+    });
+
+    try {
+      debugPrint('📞 구매 함수 호출 시작...');
+      final dataService = Provider.of<DataService>(context, listen: false);
+      final result = await dataService.purchaseGiftCard(widget.goodsCode);
+      
+      debugPrint('✅ 구매 함수 응답 받음: $result');
+      
+      if (mounted && result != null && result['success'] == true) {
+        // 구매 성공
+        debugPrint('✅ 구매 성공!');
+        debugPrint('📋 구매 정보: ${result['purchaseInfo']}');
+        
+        // 바코드 정보가 있으면 바코드 화면으로 이동
+        final purchaseInfo = result['purchaseInfo'] as Map<String, dynamic>?;
+        final giftCardInfo = purchaseInfo?['giftCardInfo'];
+        
+        if (mounted) {
+          if (giftCardInfo != null) {
+            // 바코드 화면으로 이동 (추후 구현)
+            Navigator.of(context).pop(); // 상세 화면 닫기
+            // TODO: 바코드 표시 화면으로 이동
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('구매가 완료되었습니다! (남은 코인: ${result['remainingCoins'] ?? 0})'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          } else {
+            // 바코드 정보가 없으면 메시지만 표시
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('구매가 완료되었습니다! (남은 코인: ${result['remainingCoins'] ?? 0})'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            
+            // 잠시 후 화면 닫기
+            await Future.delayed(const Duration(seconds: 1));
+            if (mounted) {
+              Navigator.of(context).pop(true);
+            }
+          }
+        }
+      } else {
+        debugPrint('❌ 구매 실패: ${result?['error']}');
+        throw Exception(result?['error'] ?? '구매에 실패했습니다.');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ 구매 오류 발생: $e');
+      debugPrint('📋 스택 트레이스: $stackTrace');
+      
+      if (mounted) {
+        setState(() {
+          _isPurchasing = false;
+        });
+        
+        String errorMessage = '구매 처리 중 오류가 발생했습니다.';
+        final errorString = e.toString();
+        
+        if (errorString.contains('코인이 부족')) {
+          errorMessage = '코인이 부족합니다.';
+        } else if (errorString.contains('로그인')) {
+          errorMessage = '로그인이 필요합니다.';
+        } else if (errorString.contains('상품 정보를 찾을 수 없습니다')) {
+          errorMessage = '상품 정보를 찾을 수 없습니다. 잠시 후 다시 시도해주세요.';
+        } else if (errorString.contains('The DEV service is currently unavailable')) {
+          errorMessage = '테스트 서비스가 현재 사용 불가능합니다.';
+        } else if (errorString.isNotEmpty) {
+          errorMessage = errorString.replaceAll('Exception: ', '').replaceAll('HttpsError: ', '');
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
   }
 
   // 이미지 URL 가져오기 (고화질 우선, 잘림 방지)
@@ -298,20 +406,30 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
         ),
         child: SafeArea(
           child: ElevatedButton(
-            onPressed: () {
-              // TODO: 구매 기능 구현
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('구매 기능은 곧 추가될 예정입니다.')),
-              );
-            },
+            onPressed: _isPurchasing 
+                ? null 
+                : () {
+                    debugPrint('🔘 구매 버튼 onPressed 호출됨');
+                    debugPrint('📊 상태: _isPurchasing=$_isPurchasing, _detailData=${_detailData != null}');
+                    _handlePurchase();
+                  },
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryColor,
+              backgroundColor: _isPurchasing ? Colors.grey : AppTheme.primaryColor,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: Row(
+            child: _isPurchasing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(

@@ -1,7 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
 import 'giftcard_detail_screen.dart';
@@ -98,10 +101,7 @@ class _ShopScreenState extends State<ShopScreen> {
       case 2:
         return _buildGiftCardTabSliver();
       case 3:
-        return SliverFillRemaining(
-          hasScrollBody: false,
-          child: _buildOwnedTab(),
-        );
+        return _buildOwnedTabSliver();
       default:
         return SliverFillRemaining(
           hasScrollBody: false,
@@ -158,15 +158,11 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Widget _buildOwnedTab() {
-    return Center(
-      child: Text(
-        '보유중',
-        style: TextStyle(
-          fontSize: 18,
-          color: AppTheme.textSecondary,
-        ),
-      ),
-    );
+    return _OwnedGiftCardListTab();
+  }
+  
+  Widget _buildOwnedTabSliver() {
+    return _OwnedGiftCardListTabSliver();
   }
 }
 
@@ -653,6 +649,573 @@ class _GiftCardItem extends StatelessWidget {
     return price.toString().replaceAllMapped(
       RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
       (Match m) => '${m[1]},',
+    );
+  }
+}
+
+// 보유 기프티콘 목록 탭
+class _OwnedGiftCardListTab extends StatefulWidget {
+  @override
+  State<_OwnedGiftCardListTab> createState() => _OwnedGiftCardListTabState();
+}
+
+// 보유 기프티콘 목록 탭 (Sliver 버전)
+class _OwnedGiftCardListTabSliver extends StatefulWidget {
+  @override
+  State<_OwnedGiftCardListTabSliver> createState() => _OwnedGiftCardListTabSliverState();
+}
+
+class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
+  List<Map<String, dynamic>> _ownedCards = [];
+  bool _isLoading = true;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOwnedCards();
+  }
+
+  Future<void> _loadOwnedCards() async {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      if (!authService.isLoggedIn || authService.user == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _hasError = false;
+            _ownedCards = [];
+          });
+        }
+        return;
+      }
+
+      final dataService = Provider.of<DataService>(context, listen: false);
+      final ownedCards = await dataService.getOwnedGiftCards(authService.user!.uid);
+      
+      if (mounted) {
+        setState(() {
+          _ownedCards = ownedCards;
+          _isLoading = false;
+          _hasError = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ 보유 기프티콘 목록 로드 오류: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authService = Provider.of<AuthService>(context);
+    
+    if (!authService.isLoggedIn) {
+      return const Center(
+        child: Text(
+          '로그인이 필요합니다.',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (_hasError) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text(
+              '보유 기프티콘 목록을 불러올 수 없습니다',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadOwnedCards,
+              child: const Text('다시 시도'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_ownedCards.isEmpty) {
+      return const Center(
+        child: Text(
+          '보유한 기프티콘이 없습니다',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadOwnedCards,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _ownedCards.length,
+        itemBuilder: (context, index) {
+          final card = _ownedCards[index];
+          return _OwnedGiftCardItem(
+            card: card,
+            onTap: () {
+              // 바코드 표시 화면으로 이동
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => _GiftCardBarcodeScreen(
+                    card: card,
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// 보유 기프티콘 아이템
+class _OwnedGiftCardItem extends StatelessWidget {
+  final Map<String, dynamic> card;
+  final VoidCallback onTap;
+
+  const _OwnedGiftCardItem({
+    required this.card,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final goodsName = card['goodsName'] ?? '기프티콘';
+    final purchaseDate = card['purchaseDate'] as Timestamp?;
+    final giftCardInfo = card['giftCardInfo'] as Map<String, dynamic>?;
+    
+    String dateText = '';
+    if (purchaseDate != null) {
+      final date = purchaseDate.toDate();
+      dateText = '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')} 구매';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // 기프티콘 아이콘
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.card_giftcard,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(width: 16),
+              // 정보
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      goodsName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (dateText.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        dateText,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (giftCardInfo != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '사용 가능',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green[700],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                color: Colors.grey,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// 기프티콘 바코드 표시 화면
+class _GiftCardBarcodeScreen extends StatelessWidget {
+  final Map<String, dynamic> card;
+
+  const _GiftCardBarcodeScreen({
+    required this.card,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final goodsName = card['goodsName'] ?? '기프티콘';
+    final giftCardInfo = card['giftCardInfo'] as Map<String, dynamic>?;
+    
+    // 바코드 정보 추출 (다양한 필드명 지원)
+    final barcode = giftCardInfo?['barcode'] ?? 
+                    giftCardInfo?['barcodeNumber'] ?? 
+                    giftCardInfo?['barcode_no'] ?? 
+                    '';
+    final barcodeImageUrl = giftCardInfo?['barcodeImage'] ?? 
+                           giftCardInfo?['barcodeImageUrl'] ?? 
+                           giftCardInfo?['barcode_img'] ?? 
+                           '';
+    final pinNumber = giftCardInfo?['pinNumber'] ?? 
+                     giftCardInfo?['pin'] ?? 
+                     giftCardInfo?['pin_no'] ?? 
+                     '';
+    final expiryDate = giftCardInfo?['expiryDate'] ?? 
+                      giftCardInfo?['expireDate'] ?? 
+                      giftCardInfo?['expiry_date'] ?? 
+                      giftCardInfo?['expire_date'] ?? 
+                      '';
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('기프티콘 사용'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 상품명
+            Text(
+              goodsName,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 40),
+            
+            // 바코드 이미지
+            if (barcodeImageUrl.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: barcodeImageUrl,
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.contain,
+                placeholder: (context, url) => const CircularProgressIndicator(),
+                errorWidget: (context, url, error) => const Icon(Icons.error),
+              )
+            else if (barcode.isNotEmpty)
+              // 바코드 번호가 있으면 텍스트로 표시
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      '바코드 번호',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      barcode,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              const Text(
+                '바코드 정보가 없습니다',
+                style: TextStyle(color: Colors.grey),
+              ),
+            
+            const SizedBox(height: 30),
+            
+            // PIN 번호
+            if (pinNumber.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'PIN 번호',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      pinNumber,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+            
+            // 유효기간
+            if (expiryDate.isNotEmpty) ...[
+              Text(
+                '유효기간: $expiryDate',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+            
+            // 사용 안내
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '사용 안내',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '• 매장에서 바코드를 제시하거나 PIN 번호를 입력하세요\n• 유효기간 내에 사용해주세요',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OwnedGiftCardListTabSliverState extends State<_OwnedGiftCardListTabSliver> {
+  List<Map<String, dynamic>> _ownedCards = [];
+  bool _isLoading = true;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOwnedCards();
+  }
+
+  Future<void> _loadOwnedCards() async {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      if (!authService.isLoggedIn || authService.user == null) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _hasError = false;
+            _ownedCards = [];
+          });
+        }
+        return;
+      }
+
+      final dataService = Provider.of<DataService>(context, listen: false);
+      final ownedCards = await dataService.getOwnedGiftCards(authService.user!.uid);
+      
+      if (mounted) {
+        setState(() {
+          _ownedCards = ownedCards;
+          _isLoading = false;
+          _hasError = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ 보유 기프티콘 목록 로드 오류: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authService = Provider.of<AuthService>(context);
+    
+    if (!authService.isLoggedIn) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: const Center(
+          child: Text(
+            '로그인이 필요합니다.',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
+    if (_isLoading) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_hasError) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                '보유 기프티콘 목록을 불러올 수 없습니다',
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadOwnedCards,
+                child: const Text('다시 시도'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_ownedCards.isEmpty) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Text(
+            '보유한 기프티콘이 없습니다',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.all(16),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final card = _ownedCards[index];
+            return _OwnedGiftCardItem(
+              card: card,
+              onTap: () {
+                // 바코드 표시 화면으로 이동
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => _GiftCardBarcodeScreen(
+                      card: card,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+          childCount: _ownedCards.length,
+        ),
+      ),
     );
   }
 }
