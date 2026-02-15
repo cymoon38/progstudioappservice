@@ -92,24 +92,44 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
     });
 
     try {
-      debugPrint('📞 구매 함수 호출 시작...');
+      debugPrint('═══════════════════════════════════════');
+      debugPrint('🛒 기프티콘 구매 프로세스 시작');
+      debugPrint('───────────────────────────────────────');
+      debugPrint('📦 goodsCode: ${widget.goodsCode}');
+      debugPrint('📦 goodsCode 타입: ${widget.goodsCode.runtimeType}');
+      debugPrint('───────────────────────────────────────');
+      
       final dataService = Provider.of<DataService>(context, listen: false);
+      debugPrint('📞 purchaseGiftCard 함수 호출...');
+      
       final result = await dataService.purchaseGiftCard(widget.goodsCode);
       
-      debugPrint('✅ 구매 함수 응답 받음: $result');
+      debugPrint('───────────────────────────────────────');
+      debugPrint('📥 purchaseGiftCard 응답 받음');
+      debugPrint('   result 타입: ${result.runtimeType}');
+      debugPrint('   result: $result');
+      debugPrint('───────────────────────────────────────');
       
       if (mounted && result != null && result['success'] == true) {
         // 구매 성공
         debugPrint('✅ 구매 성공!');
         debugPrint('📋 구매 정보: ${result['purchaseInfo']}');
+        debugPrint('💰 남은 코인: ${result['remainingCoins']}');
         
         // 바코드 정보가 있으면 바코드 화면으로 이동
         final purchaseInfo = result['purchaseInfo'] as Map<String, dynamic>?;
         final giftCardInfo = purchaseInfo?['giftCardInfo'];
         
+        debugPrint('📋 giftCardInfo 존재 여부: ${giftCardInfo != null}');
+        if (giftCardInfo != null) {
+          debugPrint('📋 giftCardInfo 내용: $giftCardInfo');
+        }
+        debugPrint('───────────────────────────────────────');
+        
         if (mounted) {
           if (giftCardInfo != null) {
             // 바코드 화면으로 이동 (추후 구현)
+            debugPrint('✅ 바코드 정보 있음 - 화면 닫기');
             Navigator.of(context).pop(); // 상세 화면 닫기
             // TODO: 바코드 표시 화면으로 이동
             ScaffoldMessenger.of(context).showSnackBar(
@@ -121,6 +141,7 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
             );
           } else {
             // 바코드 정보가 없으면 메시지만 표시
+            debugPrint('⚠️ 바코드 정보 없음 - 메시지만 표시');
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('구매가 완료되었습니다! (남은 코인: ${result['remainingCoins'] ?? 0})'),
@@ -136,12 +157,22 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
             }
           }
         }
+        debugPrint('═══════════════════════════════════════');
       } else {
-        debugPrint('❌ 구매 실패: ${result?['error']}');
+        debugPrint('❌ 구매 실패');
+        debugPrint('   result: $result');
+        debugPrint('   error: ${result?['error']}');
+        debugPrint('═══════════════════════════════════════');
         throw Exception(result?['error'] ?? '구매에 실패했습니다.');
       }
     } catch (e, stackTrace) {
-      debugPrint('❌ 구매 오류 발생: $e');
+      debugPrint('═══════════════════════════════════════');
+      debugPrint('❌ 구매 오류 발생');
+      debugPrint('───────────────────────────────────────');
+      debugPrint('   오류 타입: ${e.runtimeType}');
+      debugPrint('   오류 메시지: $e');
+      debugPrint('   스택 트레이스: $stackTrace');
+      debugPrint('═══════════════════════════════════════');
       debugPrint('📋 스택 트레이스: $stackTrace');
       
       if (mounted) {

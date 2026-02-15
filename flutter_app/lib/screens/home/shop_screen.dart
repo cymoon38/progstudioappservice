@@ -1,3 +1,4 @@
+import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
@@ -785,6 +786,7 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
                 ),
               );
             },
+            onRefresh: _loadOwnedCards,
           );
         },
       ),
@@ -793,20 +795,90 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
 }
 
 // 보유 기프티콘 아이템
-class _OwnedGiftCardItem extends StatelessWidget {
+class _OwnedGiftCardItem extends StatefulWidget {
   final Map<String, dynamic> card;
   final VoidCallback onTap;
+  final VoidCallback? onRefresh;
 
   const _OwnedGiftCardItem({
     required this.card,
     required this.onTap,
+    this.onRefresh,
   });
 
   @override
+  State<_OwnedGiftCardItem> createState() => _OwnedGiftCardItemState();
+}
+
+class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
+  bool _isRefreshing = false;
+
+  Future<void> _refreshBarcode() async {
+    if (_isRefreshing) return;
+    
+    setState(() {
+      _isRefreshing = true;
+    });
+
+    try {
+      final trId = widget.card['trId'] as String?;
+      if (trId == null || trId.isEmpty) {
+        throw Exception('거래 ID가 없습니다.');
+      }
+
+      final dataService = Provider.of<DataService>(context, listen: false);
+      await dataService.refreshGiftCardBarcode(trId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('바코드 정보를 다시 조회했습니다.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        
+        // 목록 새로고침
+        if (widget.onRefresh != null) {
+          widget.onRefresh!();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('바코드 정보 조회 실패: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final goodsName = card['goodsName'] ?? '기프티콘';
-    final purchaseDate = card['purchaseDate'] as Timestamp?;
-    final giftCardInfo = card['giftCardInfo'] as Map<String, dynamic>?;
+    final goodsName = widget.card['goodsName'] ?? '기프티콘';
+    final purchaseDate = widget.card['purchaseDate'] as Timestamp?;
+    // Firestore 데이터를 안전하게 변환
+    Map<String, dynamic>? giftCardInfo;
+    final giftCardInfoValue = widget.card['giftCardInfo'];
+    if (giftCardInfoValue != null) {
+      if (giftCardInfoValue is Map) {
+        giftCardInfo = Map<String, dynamic>.from(giftCardInfoValue);
+      } else {
+        debugPrint('⚠️ giftCardInfo 타입 오류: ${giftCardInfoValue.runtimeType}');
+        giftCardInfo = null;
+      }
+    }
+    
+    final goodsImg = widget.card['goodsImg'] as String?;
     
     String dateText = '';
     if (purchaseDate != null) {
@@ -821,29 +893,66 @@ class _OwnedGiftCardItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // 기프티콘 아이콘
+              // 기프티콘 이미지 또는 아이콘
               Container(
                 width: 60,
                 height: 60,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
-                  ),
                   borderRadius: BorderRadius.circular(12),
+                  color: goodsImg == null ? null : Colors.grey[200],
                 ),
-                child: const Icon(
-                  Icons.card_giftcard,
-                  color: Colors.white,
-                  size: 32,
-                ),
+                child: goodsImg != null && goodsImg.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(
+                          imageUrl: goodsImg,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => Container(
+                            color: Colors.grey[200],
+                            child: const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          errorWidget: (context, url, error) => Container(
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.card_giftcard,
+                              color: Colors.white,
+                              size: 32,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.card_giftcard,
+                          color: Colors.white,
+                          size: 32,
+                        ),
+                      ),
               ),
               const SizedBox(width: 16),
               // 정보
@@ -872,13 +981,56 @@ class _OwnedGiftCardItem extends StatelessWidget {
                     ],
                     if (giftCardInfo != null) ...[
                       const SizedBox(height: 4),
-                      Text(
-                        '사용 가능',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.green[700],
-                          fontWeight: FontWeight.w600,
-                        ),
+                      // 바코드 정보가 있는지 확인
+                      Builder(
+                        builder: (context) {
+                          final hasBarcode = (giftCardInfo?['barcode'] as String? ?? '').isNotEmpty ||
+                                            (giftCardInfo?['barcodeImage'] as String? ?? '').isNotEmpty ||
+                                            (giftCardInfo?['pinNumber'] as String? ?? '').isNotEmpty;
+                          
+                          if (hasBarcode) {
+                            return Text(
+                              '사용 가능',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            );
+                          } else {
+                            return Row(
+                              children: [
+                                Text(
+                                  '바코드 정보 없음',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.orange[700],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _isRefreshing
+                                    ? const SizedBox(
+                                        width: 12,
+                                        height: 12,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : TextButton(
+                                        onPressed: _refreshBarcode,
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: const Text(
+                                          '다시 조회',
+                                          style: TextStyle(fontSize: 11),
+                                        ),
+                                      ),
+                              ],
+                            );
+                          }
+                        },
                       ),
                     ],
                   ],
@@ -907,26 +1059,72 @@ class _GiftCardBarcodeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final goodsName = card['goodsName'] ?? '기프티콘';
-    final giftCardInfo = card['giftCardInfo'] as Map<String, dynamic>?;
+    // Firestore 데이터를 안전하게 변환
+    Map<String, dynamic>? giftCardInfo;
+    final giftCardInfoValue = card['giftCardInfo'];
+    if (giftCardInfoValue != null) {
+      if (giftCardInfoValue is Map) {
+        giftCardInfo = Map<String, dynamic>.from(giftCardInfoValue);
+      } else {
+        debugPrint('⚠️ giftCardInfo 타입 오류: ${giftCardInfoValue.runtimeType}');
+        giftCardInfo = null;
+      }
+    }
+    
+    // 디버깅: giftCardInfo 전체 출력
+    debugPrint('═══════════════════════════════════════');
+    debugPrint('📋 바코드 화면 - giftCardInfo 확인');
+    debugPrint('───────────────────────────────────────');
+    debugPrint('   giftCardInfo 존재: ${giftCardInfo != null}');
+    if (giftCardInfo != null) {
+      debugPrint('   giftCardInfo 키 목록: ${giftCardInfo.keys.toList()}');
+      debugPrint('   giftCardInfo 전체: $giftCardInfo');
+    }
+    debugPrint('═══════════════════════════════════════');
     
     // 바코드 정보 추출 (다양한 필드명 지원)
-    final barcode = giftCardInfo?['barcode'] ?? 
-                    giftCardInfo?['barcodeNumber'] ?? 
-                    giftCardInfo?['barcode_no'] ?? 
+    // "발행" 같은 상태 메시지는 실제 바코드/PIN 번호가 아니므로 제외
+    String? extractValidBarcodeOrPin(dynamic value) {
+      if (value == null) return null;
+      final str = value.toString().trim();
+      // 빈 문자열이거나 "발행" 같은 상태 메시지 제외
+      if (str.isEmpty || str == '발행' || str == '발행됨' || str == 'issued') return null;
+      // 숫자와 영문으로만 구성된 값만 유효한 바코드/PIN으로 인식
+      if (RegExp(r'^[0-9A-Za-z]+$').hasMatch(str) && str.length >= 3) {
+        return str;
+      }
+      return null;
+    }
+    
+    final barcode = extractValidBarcodeOrPin(giftCardInfo?['barcode']) ??
+                    extractValidBarcodeOrPin(giftCardInfo?['barcodeNumber']) ??
+                    extractValidBarcodeOrPin(giftCardInfo?['barcode_no']) ??
                     '';
     final barcodeImageUrl = giftCardInfo?['barcodeImage'] ?? 
                            giftCardInfo?['barcodeImageUrl'] ?? 
                            giftCardInfo?['barcode_img'] ?? 
+                           giftCardInfo?['barcode_image'] ?? 
                            '';
-    final pinNumber = giftCardInfo?['pinNumber'] ?? 
-                     giftCardInfo?['pin'] ?? 
-                     giftCardInfo?['pin_no'] ?? 
+    final pinNumber = extractValidBarcodeOrPin(giftCardInfo?['pinNumber']) ??
+                     extractValidBarcodeOrPin(giftCardInfo?['pin']) ??
+                     extractValidBarcodeOrPin(giftCardInfo?['pin_no']) ??
                      '';
     final expiryDate = giftCardInfo?['expiryDate'] ?? 
                       giftCardInfo?['expireDate'] ?? 
                       giftCardInfo?['expiry_date'] ?? 
                       giftCardInfo?['expire_date'] ?? 
                       '';
+    
+    debugPrint('📋 추출된 바코드 정보:');
+    debugPrint('   barcode: $barcode');
+    if (barcodeImageUrl.isNotEmpty) {
+      final preview = barcodeImageUrl.length > 50 ? '${barcodeImageUrl.substring(0, 50)}...' : barcodeImageUrl;
+      debugPrint('   barcodeImageUrl: $preview');
+    } else {
+      debugPrint('   barcodeImageUrl: (없음)');
+    }
+    debugPrint('   pinNumber: $pinNumber');
+    debugPrint('   expiryDate: $expiryDate');
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -957,47 +1155,41 @@ class _GiftCardBarcodeScreen extends StatelessWidget {
             
             // 바코드 이미지
             if (barcodeImageUrl.isNotEmpty)
+              // API에서 제공한 바코드 이미지 URL이 있으면 사용
               CachedNetworkImage(
                 imageUrl: barcodeImageUrl,
                 width: double.infinity,
                 height: 200,
                 fit: BoxFit.contain,
                 placeholder: (context, url) => const CircularProgressIndicator(),
-                errorWidget: (context, url, error) => const Icon(Icons.error),
+                errorWidget: (context, url, error) {
+                  // 이미지 로드 실패 시 바코드 번호로 생성
+                  if (barcode.isNotEmpty) {
+                    return _BarcodeImage(barcode: barcode);
+                  }
+                  return const Icon(Icons.error);
+                },
               )
             else if (barcode.isNotEmpty)
-              // 바코드 번호가 있으면 텍스트로 표시
+              // 바코드 번호가 있으면 바코드 이미지 자동 생성
+              _BarcodeImage(barcode: barcode)
+            else
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.grey[100],
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Column(
+                child: const Column(
                   children: [
-                    const Text(
-                      '바코드 번호',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+                    Icon(Icons.error_outline, size: 48, color: Colors.grey),
+                    SizedBox(height: 8),
                     Text(
-                      barcode,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                      ),
+                      '바코드 정보가 없습니다',
+                      style: TextStyle(color: Colors.grey),
                     ),
                   ],
                 ),
-              )
-            else
-              const Text(
-                '바코드 정보가 없습니다',
-                style: TextStyle(color: Colors.grey),
               ),
             
             const SizedBox(height: 30),
@@ -1075,6 +1267,114 @@ class _GiftCardBarcodeScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// 바코드 이미지 생성 위젯
+class _BarcodeImage extends StatelessWidget {
+  final String barcode;
+
+  const _BarcodeImage({required this.barcode});
+
+  // 바코드 번호에서 숫자와 영문만 추출 (한글 제거)
+  String _extractBarcodeData(String barcode) {
+    // 숫자와 영문(대소문자)만 추출
+    final regex = RegExp(r'[0-9A-Za-z]');
+    final extracted = barcode.split('').where((char) => regex.hasMatch(char)).join();
+    return extracted;
+  }
+
+  // 바코드 데이터가 유효한지 확인 (최소 1자 이상의 숫자/영문)
+  bool _isValidBarcodeData(String data) {
+    return data.isNotEmpty && RegExp(r'^[0-9A-Za-z]+$').hasMatch(data);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 바코드 번호에서 숫자와 영문만 추출
+    final barcodeData = _extractBarcodeData(barcode);
+    final isValid = _isValidBarcodeData(barcodeData);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        children: [
+          // 바코드 이미지 생성 (barcode_widget 패키지 사용)
+          if (isValid)
+            BarcodeWidget(
+              barcode: Barcode.code128(), // Code128 형식 사용
+              data: barcodeData, // 숫자/영문만 추출한 데이터 사용
+              width: double.infinity,
+              height: 120,
+              drawText: true, // 바코드 아래에 번호 표시
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            )
+          else
+            // 바코드 생성 불가능한 경우 (한글만 있거나 숫자/영문이 없는 경우)
+            Container(
+              width: double.infinity,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.grey, size: 32),
+                    SizedBox(height: 8),
+                    Text(
+                      '바코드 이미지 생성 불가',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          const Text(
+            '바코드 번호',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            barcode,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+            ),
+          ),
+          if (isValid && barcodeData != barcode) ...[
+            const SizedBox(height: 8),
+            Text(
+              '(바코드: $barcodeData)',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

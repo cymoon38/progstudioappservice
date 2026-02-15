@@ -3375,30 +3375,76 @@ class DataService extends ChangeNotifier {
   // 기프티콘 구매
   Future<Map<String, dynamic>?> purchaseGiftCard(String goodsCode, {int quantity = 1}) async {
     try {
-      debugPrint('🛒 기프티콘 구매 시작: goodsCode=$goodsCode, quantity=$quantity');
+      debugPrint('═══════════════════════════════════════');
+      debugPrint('🛒 기프티콘 구매 시작');
+      debugPrint('───────────────────────────────────────');
+      debugPrint('📦 goodsCode: $goodsCode (타입: ${goodsCode.runtimeType})');
+      debugPrint('📦 quantity: $quantity (타입: ${quantity.runtimeType})');
+      debugPrint('───────────────────────────────────────');
       
       final functions = FirebaseFunctions.instance;
       final callable = functions.httpsCallable('purchaseGiftCard');
-      final result = await callable.call({
+      
+      final requestData = {
         'goodsCode': goodsCode,
         'quantity': quantity,
-      });
+      };
+      
+      debugPrint('📤 Cloud Function 호출 데이터:');
+      debugPrint('   goodsCode: ${requestData['goodsCode']}');
+      debugPrint('   quantity: ${requestData['quantity']}');
+      debugPrint('   전체 데이터: $requestData');
+      debugPrint('───────────────────────────────────────');
+      
+      final result = await callable.call(requestData);
+      
+      debugPrint('📥 Cloud Function 응답 받음');
+      debugPrint('   result.data 타입: ${result.data.runtimeType}');
+      debugPrint('   result.data: $result.data');
+      debugPrint('───────────────────────────────────────');
       
       final data = result.data as Map<String, dynamic>?;
       
-      if (data != null && data['success'] == true) {
+      if (data == null) {
+        debugPrint('❌ 응답 데이터가 null입니다.');
+        throw Exception('구매 응답 데이터가 없습니다.');
+      }
+      
+      debugPrint('📋 응답 데이터 상세:');
+      debugPrint('   success: ${data['success']}');
+      debugPrint('   message: ${data['message']}');
+      debugPrint('   remainingCoins: ${data['remainingCoins']}');
+      debugPrint('───────────────────────────────────────');
+      
+      if (data['success'] == true) {
         debugPrint('✅ 구매 성공: ${data['message']}');
         debugPrint('💰 남은 코인: ${data['remainingCoins']}');
+        debugPrint('═══════════════════════════════════════');
         return data;
       } else {
-        debugPrint('❌ 구매 실패: ${data?['error'] ?? '알 수 없는 오류'}');
-        throw Exception(data?['error'] ?? '구매에 실패했습니다.');
+        final errorMsg = data['error'] ?? '알 수 없는 오류';
+        debugPrint('❌ 구매 실패: $errorMsg');
+        debugPrint('═══════════════════════════════════════');
+        throw Exception(errorMsg);
       }
     } on FirebaseFunctionsException catch (e) {
-      debugPrint('❌ 구매 함수 오류: ${e.code} - ${e.message}');
+      debugPrint('═══════════════════════════════════════');
+      debugPrint('❌ Firebase Functions 오류 발생');
+      debugPrint('───────────────────────────────────────');
+      debugPrint('   코드: ${e.code}');
+      debugPrint('   메시지: ${e.message}');
+      debugPrint('   상세: ${e.details}');
+      debugPrint('   스택: ${e.stackTrace}');
+      debugPrint('═══════════════════════════════════════');
       throw Exception(e.message ?? '구매 처리 중 오류가 발생했습니다.');
-    } catch (e) {
-      debugPrint('❌ 기프티콘 구매 오류: $e');
+    } catch (e, stackTrace) {
+      debugPrint('═══════════════════════════════════════');
+      debugPrint('❌ 기프티콘 구매 오류 발생');
+      debugPrint('───────────────────────────────────────');
+      debugPrint('   오류 타입: ${e.runtimeType}');
+      debugPrint('   오류 메시지: $e');
+      debugPrint('   스택 트레이스: $stackTrace');
+      debugPrint('═══════════════════════════════════════');
       throw Exception('구매 처리 중 오류가 발생했습니다: $e');
     }
   }
@@ -3418,10 +3464,39 @@ class DataService extends ChangeNotifier {
       final List<Map<String, dynamic>> ownedCards = [];
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        ownedCards.add({
+        // Firestore 데이터를 안전하게 변환
+        final Map<String, dynamic> cardData = {
           'id': doc.id,
-          ...data,
-        });
+        };
+        
+        // data 추가
+        cardData.addAll(data);
+        
+        // giftCardInfo가 List인 경우 처리 및 타입 안전 변환
+        final giftCardInfoValue = cardData['giftCardInfo'];
+        if (giftCardInfoValue != null) {
+          if (giftCardInfoValue is List) {
+            debugPrint('⚠️ giftCardInfo가 List입니다. 첫 번째 요소를 사용합니다.');
+            if (giftCardInfoValue.isNotEmpty) {
+              final firstItem = giftCardInfoValue[0];
+              if (firstItem is Map) {
+                cardData['giftCardInfo'] = Map<String, dynamic>.from(firstItem);
+              } else {
+                cardData['giftCardInfo'] = null;
+              }
+            } else {
+              cardData['giftCardInfo'] = null;
+            }
+          } else if (giftCardInfoValue is Map) {
+            // Map 타입이지만 Map<String, dynamic>이 아닐 수 있으므로 변환
+            cardData['giftCardInfo'] = Map<String, dynamic>.from(giftCardInfoValue);
+          } else {
+            debugPrint('⚠️ giftCardInfo가 예상치 못한 타입입니다: ${giftCardInfoValue.runtimeType}');
+            cardData['giftCardInfo'] = null;
+          }
+        }
+        
+        ownedCards.add(cardData);
       }
       
       debugPrint('✅ 보유 기프티콘 ${ownedCards.length}개 조회 완료');
@@ -3429,6 +3504,35 @@ class DataService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ 보유 기프티콘 목록 조회 오류: $e');
       return [];
+    }
+  }
+
+  // 기프티콘 바코드 정보 재조회 (이미 구매한 기프티콘의 바코드 정보를 다시 가져오기)
+  Future<Map<String, dynamic>?> refreshGiftCardBarcode(String trId) async {
+    try {
+      debugPrint('🔄 기프티콘 바코드 정보 재조회 시작: trId=$trId');
+      
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('refreshGiftCardBarcode');
+      final result = await callable.call({
+        'trId': trId,
+      });
+      
+      final data = result.data as Map<String, dynamic>?;
+      
+      if (data != null && data['success'] == true) {
+        debugPrint('✅ 바코드 정보 재조회 성공');
+        return data;
+      } else {
+        debugPrint('❌ 바코드 정보 재조회 실패: ${data?['error'] ?? '알 수 없는 오류'}');
+        throw Exception(data?['error'] ?? '바코드 정보 조회에 실패했습니다.');
+      }
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint('❌ 바코드 정보 재조회 함수 오류: ${e.code} - ${e.message}');
+      throw Exception(e.message ?? '바코드 정보 조회 중 오류가 발생했습니다.');
+    } catch (e) {
+      debugPrint('❌ 기프티콘 바코드 정보 재조회 오류: $e');
+      throw Exception('바코드 정보 조회 중 오류가 발생했습니다: $e');
     }
   }
 
