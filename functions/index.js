@@ -26,6 +26,12 @@ function getSecret(secretName) {
     // Firebase Console > Functions > 설정 > 환경 변수에서 GIFTSHOWBIZ_USER_ID_PROD 설정 가능
     return process.env.GIFTSHOWBIZ_USER_ID_PROD || process.env.GIFTSHOWBIZ_USER_ID || 'cymoon38@gmail.com';
   }
+  if (secretName === 'GIFTSHOWBIZ_PHONE_NO') {
+    // 고정 전화번호 (테스트용)
+    // Firebase Console > Functions > 설정 > 환경 변수에서 GIFTSHOWBIZ_PHONE_NO 설정 가능
+    // 또는 아래에 직접 전화번호를 하드코딩할 수 있습니다
+    return process.env.GIFTSHOWBIZ_PHONE_NO || '01057049470'; // 고정 전화번호
+  }
   // 환경 변수에서 가져오기 (배포 시 설정)
   return process.env[secretName] || '';
 }
@@ -1026,6 +1032,13 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
     const userData = userDoc.data();
     const userCoins = userData.coins || 0;
 
+    // 사용자 전화번호 확인 (다양한 필드명 지원)
+    console.log('📞 사용자 전화번호 확인:');
+    console.log('   userData.phone:', userData.phone);
+    console.log('   userData.phoneNumber:', userData.phoneNumber);
+    console.log('   userData.phone_number:', userData.phone_number);
+    console.log('   userData 전체 키:', Object.keys(userData));
+
     // 상품 상세 정보 조회 (가격 확인) - 직접 API 호출
     const detailApiUrl = `${GIFTSHOWBIZ_BASE_URL}/goods/${goodsCodeStr}`;
     const detailFormData = new URLSearchParams();
@@ -1122,10 +1135,33 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
     const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '');
     const trId = `canvas_${dateStr}_${timeStr}`.substring(0, 25);
     
-    // 사용자 정보에서 전화번호 가져오기 (없으면 더미 값 사용)
-    // 앱 내에서 바로 바코드를 표시하므로 실제 문자 발송은 하지 않음
-    const userPhone = userData.phone || '01000000000'; // 전화번호 없으면 더미 값
-    const callbackNo = '01000000000'; // 발신번호 (설정 필요)
+    // 전화번호 가져오기 (우선순위: 환경 변수 > 사용자 데이터)
+    // 환경 변수에 고정 전화번호가 설정되어 있으면 사용 (테스트용)
+    const fixedPhoneNo = getSecret('GIFTSHOWBIZ_PHONE_NO');
+    
+    let userPhone = '';
+    if (fixedPhoneNo && fixedPhoneNo.trim() !== '') {
+      // 환경 변수에 고정 전화번호가 있으면 사용
+      userPhone = fixedPhoneNo.trim();
+      console.log('📞 고정 전화번호 사용 (환경 변수):', userPhone.substring(0, 3) + '****' + userPhone.substring(7));
+    } else {
+      // 사용자 정보에서 전화번호 가져오기 (다양한 필드명 지원)
+      userPhone = userData.phone || 
+                   userData.phoneNumber || 
+                   userData.phone_number || 
+                   '';
+      
+      console.log('📞 전화번호 추출 (사용자 데이터):');
+      console.log('   원본 userPhone:', userPhone);
+      
+      if (!userPhone || userPhone.trim() === '') {
+        console.error('❌ 사용자 전화번호가 없습니다!');
+        console.error('   userData:', JSON.stringify(userData, null, 2));
+        throw new functions.https.HttpsError('invalid-argument', '전화번호가 등록되어 있지 않습니다. 프로필에서 전화번호를 등록해주세요.');
+      }
+    }
+    
+    const callbackNo = userPhone; // 발신번호도 동일한 전화번호 사용
     
     // 파라미터 검증 및 준비
     const phoneNo = userPhone.replace(/-/g, '').trim();
@@ -1268,51 +1304,90 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
       console.log('✅ 쿠폰 발송 요청 성공:', response.data);
       
       // 응답에 바로 바코드 정보가 포함되어 있는지 확인 (gubun: 'I'로 설정했으므로 포함될 수 있음)
+      // API 규격서에 따르면: response.data.result.result에 pinNo, couponImgUrl, orderNo가 있음
       let giftCardInfo = null;
       const responseData = response.data;
       
       console.log('🔍 쿠폰 발송 응답 분석 (gubun: I - 바코드 이미지 수신):');
       console.log('   responseData 전체 키:', Object.keys(responseData));
       console.log('   responseData.result:', responseData.result);
-      console.log('   responseData.couponDetail:', responseData.couponDetail);
-      console.log('   responseData.barcode:', responseData.barcode);
-      console.log('   responseData.barcodeImage:', responseData.barcodeImage);
+      console.log('   responseData.result.result:', responseData.result?.result);
+      console.log('   responseData.result.result 타입:', typeof responseData.result?.result);
+      if (responseData.result?.result) {
+        console.log('   responseData.result.result 키:', Object.keys(responseData.result.result));
+        console.log('   responseData.result.result 값:', JSON.stringify(responseData.result.result, null, 2));
+      }
       console.log('   responseData 전체:', JSON.stringify(responseData, null, 2));
       
-      // 1차: 응답에 바로 바코드 정보가 있는지 확인 (gubun: 'I'로 설정했으므로 바코드 이미지가 포함될 수 있음)
-      // 다양한 필드명 확인
-      const possibleFields = [
-        'result',
-        'couponDetail',
-        'coupon',
-        'barcodeInfo',
-        'barcode',
-      ];
-      
-      for (const field of possibleFields) {
-        if (responseData[field]) {
-          const info = responseData[field];
-          console.log(`   ${field} 필드 확인:`, typeof info, Array.isArray(info) ? '배열' : '객체');
-          
-          // 배열인 경우 첫 번째 요소 확인
-          const checkInfo = Array.isArray(info) ? info[0] : info;
-          
-          if (checkInfo && typeof checkInfo === 'object') {
-            const hasBarcode = checkInfo.barcode || checkInfo.barcodeNumber || checkInfo.barcode_no;
-            const hasBarcodeImage = checkInfo.barcodeImage || checkInfo.barcodeImageUrl || checkInfo.barcode_img || checkInfo.barcode_image;
-            const hasPin = checkInfo.pinNumber || checkInfo.pin || checkInfo.pin_no;
+      // API 규격서에 따른 응답 구조 파싱
+      // 구조: response.data.result.result = { orderNo, pinNo, couponImgUrl }
+      if (responseData.result && responseData.result.result) {
+        const resultData = responseData.result.result;
+        console.log('✅ API 규격서 구조 발견: result.result');
+        console.log('   result.result 키:', Object.keys(resultData));
+        console.log('   orderNo:', resultData.orderNo);
+        console.log('   pinNo:', resultData.pinNo);
+        console.log('   couponImgUrl:', resultData.couponImgUrl);
+        
+        // API 규격서에 따른 필드명 매핑
+        giftCardInfo = {
+          orderNo: resultData.orderNo || '',
+          pinNumber: resultData.pinNo || '', // pinNo → pinNumber로 매핑
+          barcodeImage: resultData.couponImgUrl || '', // couponImgUrl → barcodeImage로 매핑
+          // pinNo를 바코드 번호로도 사용 (바코드 번호가 없을 경우)
+          barcode: resultData.pinNo || '',
+        };
+        
+        console.log('✅ API 규격서 구조에서 바코드 정보 추출 완료:', {
+          orderNo: giftCardInfo.orderNo,
+          pinNumber: giftCardInfo.pinNumber,
+          barcodeImage: giftCardInfo.barcodeImage ? `${giftCardInfo.barcodeImage.substring(0, 50)}...` : '(없음)',
+          barcode: giftCardInfo.barcode,
+        });
+      } else {
+        // 기존 방식으로도 확인 (하위 호환성)
+        console.log('⚠️ API 규격서 구조가 아닙니다. 기존 방식으로 확인합니다.');
+        const possibleFields = [
+          'result',
+          'couponDetail',
+          'coupon',
+          'barcodeInfo',
+          'barcode',
+        ];
+        
+        for (const field of possibleFields) {
+          if (responseData[field]) {
+            const info = responseData[field];
+            console.log(`   ${field} 필드 확인:`, typeof info, Array.isArray(info) ? '배열' : '객체');
             
-            console.log(`   ${field} 필드 내용:`, {
-              hasBarcode: !!hasBarcode,
-              hasBarcodeImage: !!hasBarcodeImage,
-              hasPin: !!hasPin,
-              keys: Object.keys(checkInfo),
-            });
+            // 배열인 경우 첫 번째 요소 확인
+            const checkInfo = Array.isArray(info) ? info[0] : info;
             
-            if (hasBarcode || hasBarcodeImage || hasPin) {
-              console.log(`✅ ${field} 필드에서 바코드 정보 발견!`);
-              giftCardInfo = checkInfo;
-              break;
+            if (checkInfo && typeof checkInfo === 'object') {
+              // API 규격서 필드명도 확인
+              const hasBarcode = checkInfo.barcode || checkInfo.barcodeNumber || checkInfo.barcode_no || checkInfo.pinNo;
+              const hasBarcodeImage = checkInfo.barcodeImage || checkInfo.barcodeImageUrl || checkInfo.barcode_img || checkInfo.barcode_image || checkInfo.couponImgUrl;
+              const hasPin = checkInfo.pinNumber || checkInfo.pin || checkInfo.pin_no || checkInfo.pinNo;
+              
+              console.log(`   ${field} 필드 내용:`, {
+                hasBarcode: !!hasBarcode,
+                hasBarcodeImage: !!hasBarcodeImage,
+                hasPin: !!hasPin,
+                keys: Object.keys(checkInfo),
+              });
+              
+              if (hasBarcode || hasBarcodeImage || hasPin) {
+                console.log(`✅ ${field} 필드에서 바코드 정보 발견!`);
+                giftCardInfo = checkInfo;
+                // API 규격서 필드명 매핑
+                if (checkInfo.pinNo && !checkInfo.pinNumber) {
+                  giftCardInfo.pinNumber = checkInfo.pinNo;
+                }
+                if (checkInfo.couponImgUrl && !checkInfo.barcodeImage) {
+                  giftCardInfo.barcodeImage = checkInfo.couponImgUrl;
+                }
+                break;
+              }
             }
           }
         }
@@ -1377,17 +1452,27 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
           }
           
           if (couponDetailResponse.data && couponDetailResponse.data.code === '0000') {
-            // 쿠폰 상세 정보는 result 필드에 있거나, 직접 응답 데이터에 있을 수 있음
+            // 쿠폰 상세 정보는 result.result 구조일 수 있음 (API 규격서 참고)
             const responseData = couponDetailResponse.data;
-            const detailInfo = responseData.result || 
-                              responseData.couponDetail || 
-                              responseData.coupon ||
-                              responseData.data ||
-                              responseData;
+            
+            // API 규격서 구조 확인: response.data.result.result
+            let detailInfo = null;
+            if (responseData.result && responseData.result.result) {
+              detailInfo = responseData.result.result;
+              console.log('✅ API 규격서 구조 발견: result.result');
+            } else {
+              // 기존 방식 (하위 호환성)
+              detailInfo = responseData.result || 
+                          responseData.couponDetail || 
+                          responseData.coupon ||
+                          responseData.data ||
+                          responseData;
+            }
             
             console.log('═══════════════════════════════════════');
             console.log('✅ 쿠폰 상세 정보 조회 성공:');
             console.log('   responseData.result:', !!responseData.result);
+            console.log('   responseData.result.result:', !!responseData.result?.result);
             console.log('   responseData.couponDetail:', !!responseData.couponDetail);
             console.log('   responseData.coupon:', !!responseData.coupon);
             console.log('   responseData.data:', !!responseData.data);
@@ -1406,6 +1491,17 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
             } else if (typeof detailInfo === 'object' && detailInfo !== null) {
               giftCardInfo = detailInfo;
               
+              // API 규격서 필드명 매핑 (pinNo → pinNumber, couponImgUrl → barcodeImage)
+              if (giftCardInfo.pinNo && !giftCardInfo.pinNumber) {
+                giftCardInfo.pinNumber = giftCardInfo.pinNo;
+              }
+              if (giftCardInfo.couponImgUrl && !giftCardInfo.barcodeImage) {
+                giftCardInfo.barcodeImage = giftCardInfo.couponImgUrl;
+              }
+              if (giftCardInfo.pinNo && !giftCardInfo.barcode) {
+                giftCardInfo.barcode = giftCardInfo.pinNo;
+              }
+              
               // 바코드 정보가 있는지 확인
               console.log('🔍 detailInfo에서 바코드 정보 확인:');
               console.log('   모든 키:', Object.keys(giftCardInfo));
@@ -1413,15 +1509,18 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
                 barcode: giftCardInfo.barcode,
                 barcodeNumber: giftCardInfo.barcodeNumber,
                 barcode_no: giftCardInfo.barcode_no,
+                pinNo: giftCardInfo.pinNo,
                 barcodeImage: giftCardInfo.barcodeImage,
                 barcodeImageUrl: giftCardInfo.barcodeImageUrl,
                 barcode_img: giftCardInfo.barcode_img,
                 barcode_image: giftCardInfo.barcode_image,
+                couponImgUrl: giftCardInfo.couponImgUrl,
               });
               console.log('   pin 관련 필드:', {
                 pinNumber: giftCardInfo.pinNumber,
                 pin: giftCardInfo.pin,
                 pin_no: giftCardInfo.pin_no,
+                pinNo: giftCardInfo.pinNo,
               });
             } else {
               console.warn('⚠️ detailInfo가 유효한 객체가 아닙니다.');
@@ -1449,6 +1548,7 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
       
       if (giftCardInfo) {
         // 바코드 추출 (유효한 값만)
+        // API 규격서: pinNo를 바코드 번호로 사용할 수 있음
         let barcode = '';
         const barcodeCandidates = [
           giftCardInfo.barcode,
@@ -1456,6 +1556,7 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
           giftCardInfo.barcode_no,
           giftCardInfo.barcodeNo,
           giftCardInfo.barCode,
+          giftCardInfo.pinNo, // API 규격서: pinNo도 바코드로 사용 가능
         ];
         for (const candidate of barcodeCandidates) {
           if (isValidBarcodeOrPin(candidate)) {
@@ -1465,12 +1566,13 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
         }
         
         // PIN 번호 추출 (유효한 값만)
+        // API 규격서: pinNo 필드명 사용
         let pinNumber = '';
         const pinCandidates = [
           giftCardInfo.pinNumber,
           giftCardInfo.pin,
           giftCardInfo.pin_no,
-          giftCardInfo.pinNo,
+          giftCardInfo.pinNo, // API 규격서 필드명
         ];
         for (const candidate of pinCandidates) {
           if (isValidBarcodeOrPin(candidate)) {
@@ -1479,12 +1581,22 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
           }
         }
         
+        // 바코드 이미지 URL 추출
+        // API 규격서: couponImgUrl 필드명 사용
+        const barcodeImage = giftCardInfo.barcodeImage || 
+                            giftCardInfo.barcodeImageUrl || 
+                            giftCardInfo.barcode_img || 
+                            giftCardInfo.barcode_image ||
+                            giftCardInfo.couponImgUrl || // API 규격서 필드명
+                            '';
+        
         const barcodeInfo = {
           barcode: barcode,
-          barcodeImage: giftCardInfo.barcodeImage || giftCardInfo.barcodeImageUrl || giftCardInfo.barcode_img || giftCardInfo.barcode_image || '',
+          barcodeImage: barcodeImage,
           pinNumber: pinNumber,
           expiryDate: giftCardInfo.expiryDate || giftCardInfo.expireDate || giftCardInfo.expiry_date || giftCardInfo.expire_date || '',
           trId: trId,
+          orderNo: giftCardInfo.orderNo || '', // API 규격서: orderNo도 저장
         };
         
         console.log('✅ 바코드 정보 추출 완료:', {
@@ -1691,9 +1803,9 @@ exports.refreshGiftCardBarcode = functions.https.onCall(async (data, context) =>
     }
 
     const userId = context.auth.uid;
-    const { trId } = data;
+    const { trId, useResend = false } = data; // useResend: 재전송 API 사용 여부
 
-    console.log('🔄 기프티콘 바코드 정보 재조회 요청:', { userId, trId });
+    console.log('🔄 기프티콘 바코드 정보 재조회 요청:', { userId, trId, useResend });
 
     if (!trId) {
       throw new functions.https.HttpsError('invalid-argument', '거래 ID가 필요합니다.');
@@ -1707,7 +1819,91 @@ exports.refreshGiftCardBarcode = functions.https.onCall(async (data, context) =>
       throw new functions.https.HttpsError('internal', 'API 인증 정보를 가져올 수 없습니다.');
     }
 
-    // 쿠폰 상세 정보 조회 API 호출
+    // 보유 기프티콘 정보 가져오기
+    const ownedCardsQuery = await db.collection('ownedGiftCards')
+      .where('userId', '==', userId)
+      .where('trId', '==', trId)
+      .limit(1)
+      .get();
+
+    if (ownedCardsQuery.empty) {
+      throw new functions.https.HttpsError('not-found', '보유 기프티콘을 찾을 수 없습니다.');
+    }
+
+    const ownedCardDoc = ownedCardsQuery.docs[0];
+    const ownedCardData = ownedCardDoc.data();
+    const goodsCode = ownedCardData.goodsCode || '';
+
+    console.log('📦 기존 구매 정보:', {
+      goodsCode: goodsCode,
+      trId: trId,
+      hasBarcodeInfo: !!ownedCardData.giftCardInfo,
+    });
+
+    // 재전송 API 사용 여부에 따라 분기
+    if (useResend && goodsCode) {
+      console.log('📤 재전송 API 사용: 기존 구매 정보로 다시 발송 요청');
+      
+      // 고정 전화번호 가져오기 (참고용, 재전송 API에는 필요 없음)
+      const fixedPhoneNo = getSecret('GIFTSHOWBIZ_PHONE_NO');
+      const phoneNo = fixedPhoneNo ? fixedPhoneNo.replace(/-/g, '').trim() : '01057049470';
+      const callbackNo = phoneNo;
+      
+      console.log('📞 전화번호 확인 (참고용, 재전송 API에는 사용 안 함):', {
+        phone_no: phoneNo,
+        callback_no: callbackNo,
+        source: fixedPhoneNo ? 'GIFTSHOWBIZ_PHONE_NO' : '기본값',
+      });
+      
+      // Giftshowbiz User ID
+      const giftshowbizAccountId = getSecret('GIFTSHOWBIZ_USER_ID');
+      const giftshowbizUserId = giftshowbizAccountId || 'cymoon38@gmail.com';
+      
+      // 재전송 API 호출 (0203 - 쿠폰 재전송 API)
+      // 주의: 재전송 API는 phone_no, callback_no 파라미터가 필요 없음
+      const resendApiUrl = `${GIFTSHOWBIZ_BASE_URL}/resend`;
+      const resendFormData = new URLSearchParams();
+      resendFormData.append('api_code', '0203'); // 쿠폰 재전송 API
+      resendFormData.append('custom_auth_code', authCode.trim());
+      resendFormData.append('custom_auth_token', authToken.trim());
+      resendFormData.append('dev_yn', 'N');
+      resendFormData.append('tr_id', trId); // 거래 ID (필수)
+      resendFormData.append('sms_flag', 'N'); // N: MMS (기본값), Y: SMS
+      resendFormData.append('user_id', String(giftshowbizUserId).trim()); // 회원 ID (필수)
+
+      console.log('📞 재전송 API 호출 (0203):', {
+        api_code: '0203',
+        tr_id: trId,
+        sms_flag: 'N',
+        user_id: giftshowbizUserId,
+        url: resendApiUrl,
+        note: '재전송 API는 phone_no, callback_no 파라미터가 필요 없습니다',
+      });
+
+      const resendResponse = await axios.post(
+        resendApiUrl,
+        resendFormData.toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          timeout: 30000,
+        }
+      );
+
+      console.log('📥 재전송 API 응답:', JSON.stringify(resendResponse.data, null, 2));
+
+      if (resendResponse.data && resendResponse.data.code === '0000') {
+        // 재전송 성공 - 재전송 API(0203)는 result가 null이므로 쿠폰 상세 정보 조회로 바코드 정보 가져오기
+        console.log('✅ 재전송 성공 (code: 0000), 쿠폰 상세 정보 조회로 바코드 정보 가져오기');
+        // 아래 쿠폰 상세 정보 조회 로직으로 계속 진행
+      } else {
+        console.warn('⚠️ 재전송 API 실패:', resendResponse.data);
+        console.warn('   쿠폰 상세 정보 조회로 전환');
+      }
+    }
+
+    // 쿠폰 상세 정보 조회 API 호출 (기존 방식)
     const couponDetailUrl = `${GIFTSHOWBIZ_BASE_URL}/coupons`;
     const couponDetailFormData = new URLSearchParams();
     couponDetailFormData.append('api_code', '0201'); // 쿠폰 상세 정보 API
@@ -1737,68 +1933,109 @@ exports.refreshGiftCardBarcode = functions.https.onCall(async (data, context) =>
     });
 
     if (couponDetailResponse.data && couponDetailResponse.data.code === '0000') {
-      const detailInfo = couponDetailResponse.data.result || 
-                        couponDetailResponse.data.couponDetail || 
-                        couponDetailResponse.data.coupon ||
-                        couponDetailResponse.data;
+      // 쿠폰 상세 정보는 result.result 구조일 수 있음 (API 규격서 참고)
+      const responseData = couponDetailResponse.data;
+      
+      // API 규격서 구조 확인: response.data.result.result
+      let detailInfo = null;
+      if (responseData.result && responseData.result.result) {
+        detailInfo = responseData.result.result;
+        console.log('✅ API 규격서 구조 발견: result.result');
+      } else {
+        // 기존 방식 (하위 호환성)
+        detailInfo = responseData.result || 
+                    responseData.couponDetail || 
+                    responseData.coupon ||
+                    responseData.data ||
+                    responseData;
+      }
 
       let giftCardInfo = null;
       if (Array.isArray(detailInfo) && detailInfo.length > 0) {
         giftCardInfo = detailInfo[0];
       } else if (typeof detailInfo === 'object' && detailInfo !== null) {
         giftCardInfo = detailInfo;
+        
+        // API 규격서 필드명 매핑 (pinNo → pinNumber, couponImgUrl → barcodeImage)
+        if (giftCardInfo.pinNo && !giftCardInfo.pinNumber) {
+          giftCardInfo.pinNumber = giftCardInfo.pinNo;
+        }
+        if (giftCardInfo.couponImgUrl && !giftCardInfo.barcodeImage) {
+          giftCardInfo.barcodeImage = giftCardInfo.couponImgUrl;
+        }
+        if (giftCardInfo.pinNo && !giftCardInfo.barcode) {
+          giftCardInfo.barcode = giftCardInfo.pinNo;
+        }
       }
 
       if (giftCardInfo) {
-        // 바코드 정보 추출 (재귀적으로 모든 필드 확인)
-        const barcodeInfo = {
-          barcode: '',
-          barcodeImage: '',
-          pinNumber: '',
-          expiryDate: '',
-          trId: trId,
-        };
-
-        function searchForBarcodeInfo(obj) {
-          if (!obj || typeof obj !== 'object') return;
-          
-          for (const key in obj) {
-            const value = obj[key];
-            const lowerKey = key.toLowerCase();
-            
-            if (lowerKey.includes('barcode')) {
-              if (lowerKey.includes('image') || lowerKey.includes('img') || lowerKey.includes('url')) {
-                if (value && typeof value === 'string' && value.trim() !== '') {
-                  barcodeInfo.barcodeImage = value.trim();
-                }
-              } else {
-                if (value && (typeof value === 'string' || typeof value === 'number') && String(value).trim() !== '') {
-                  barcodeInfo.barcode = String(value).trim();
-                }
-              }
-            }
-            
-            if (lowerKey.includes('pin')) {
-              if (value && (typeof value === 'string' || typeof value === 'number') && String(value).trim() !== '') {
-                barcodeInfo.pinNumber = String(value).trim();
-              }
-            }
-            
-            if (lowerKey.includes('expir') || lowerKey.includes('expire')) {
-              if (value && typeof value === 'string' && value.trim() !== '') {
-                barcodeInfo.expiryDate = value.trim();
-              }
-            }
-            
-            if (value && typeof value === 'object' && !Array.isArray(value)) {
-              searchForBarcodeInfo(value);
-            } else if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object') {
-              searchForBarcodeInfo(value[0]);
-            }
-          }
+        // 바코드 정보 추출 (유효한 값만)
+        function isValidBarcodeOrPin(value) {
+          if (!value || typeof value !== 'string') return false;
+          const trimmed = value.trim();
+          if (trimmed === '' || trimmed === '발행' || trimmed === '발행됨' || trimmed === 'issued') return false;
+          return /^[0-9A-Za-z]+$/.test(trimmed) && trimmed.length >= 3;
         }
 
-        searchForBarcodeInfo(giftCardInfo);
+        console.log('🔍 바코드/PIN 추출 시작');
+        console.log('   giftCardInfo 전체 키:', Object.keys(giftCardInfo));
+        console.log('   giftCardInfo 값들:', JSON.stringify(giftCardInfo, null, 2));
+        
+        let barcode = '';
+        const barcodeCandidates = [
+          giftCardInfo.barcode,
+          giftCardInfo.barcodeNumber,
+          giftCardInfo.barcode_no,
+          giftCardInfo.barcodeNo,
+          giftCardInfo.barCode,
+          giftCardInfo.pinNo,
+        ];
+        console.log('   바코드 후보:', barcodeCandidates);
+        for (const candidate of barcodeCandidates) {
+          if (isValidBarcodeOrPin(candidate)) {
+            barcode = String(candidate).trim();
+            console.log('   ✅ 유효한 바코드 발견:', barcode);
+            break;
+          }
+        }
+        if (!barcode) {
+          console.warn('   ⚠️ 유효한 바코드를 찾을 수 없습니다');
+        }
+
+        let pinNumber = '';
+        const pinCandidates = [
+          giftCardInfo.pinNumber,
+          giftCardInfo.pin,
+          giftCardInfo.pin_no,
+          giftCardInfo.pinNo,
+        ];
+        console.log('   PIN 후보:', pinCandidates);
+        for (const candidate of pinCandidates) {
+          if (isValidBarcodeOrPin(candidate)) {
+            pinNumber = String(candidate).trim();
+            console.log('   ✅ 유효한 PIN 발견:', pinNumber);
+            break;
+          }
+        }
+        if (!pinNumber) {
+          console.warn('   ⚠️ 유효한 PIN을 찾을 수 없습니다');
+        }
+
+        const barcodeImage = giftCardInfo.barcodeImage || 
+                            giftCardInfo.barcodeImageUrl || 
+                            giftCardInfo.barcode_img || 
+                            giftCardInfo.barcode_image ||
+                            giftCardInfo.couponImgUrl ||
+                            '';
+
+        const barcodeInfo = {
+          barcode: barcode,
+          barcodeImage: barcodeImage,
+          pinNumber: pinNumber,
+          expiryDate: giftCardInfo.expiryDate || giftCardInfo.expireDate || giftCardInfo.expiry_date || giftCardInfo.expire_date || '',
+          trId: trId,
+          orderNo: giftCardInfo.orderNo || '',
+        };
 
         // PIN 번호만 있는 경우, PIN 번호를 바코드 번호로 사용
         if (!barcodeInfo.barcode && !barcodeInfo.barcodeImage && barcodeInfo.pinNumber) {

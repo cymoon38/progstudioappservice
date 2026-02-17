@@ -1572,12 +1572,12 @@ class DataService extends ChangeNotifier {
           final comment = entry.value;
           if (idx == commentIndex) {
             // 해당 댓글의 대댓글 중 하나를 채택
-            return {
-              'id': comment.id,
-              'author': comment.author,
+          return {
+            'id': comment.id,
+            'author': comment.author,
               'authorUid': comment.authorUid,
-              'text': comment.text,
-              'createdAt': Timestamp.fromDate(comment.createdAt),
+            'text': comment.text,
+            'createdAt': Timestamp.fromDate(comment.createdAt),
               'replies': comment.replies.asMap().entries.map((replyEntry) {
                 final replyIdx = replyEntry.key;
                 final reply = replyEntry.value;
@@ -1621,15 +1621,15 @@ class DataService extends ChangeNotifier {
         await _firestore.collection('users').doc(postAuthorUid).update({'coins': newCoins});
         
         // 코인 내역 추가 (차감)
-        await _firestore.collection('coinHistory').add({
+      await _firestore.collection('coinHistory').add({
           'userId': postAuthorUid,
           'amount': -coinAmount,
           'type': '댓글 채택',
-          'postId': postId,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
+        'postId': postId,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
       }
-
+      
       // 알림 생성
       await _firestore.collection('notifications').add({
         'userId': commentAuthorUid,
@@ -1640,7 +1640,7 @@ class DataService extends ChangeNotifier {
         'createdAt': FieldValue.serverTimestamp(),
         'read': false,
       });
-
+      
       // 로컬 상태 업데이트
       final postIndex = _posts.indexWhere((p) => p.id == postId);
       if (postIndex != -1) {
@@ -2085,7 +2085,7 @@ class DataService extends ChangeNotifier {
       var snapshot = await query
           .orderBy('date', descending: true)
           .limit(1)
-          .get();
+        .get();
       
       if (snapshot.docs.isNotEmpty) {
         return snapshot.docs.first.id;
@@ -2521,47 +2521,47 @@ class DataService extends ChangeNotifier {
         .snapshots()
         .listen(
       (snapshot) {
-        try {
-          final Map<String, UserMission> result = {};
-          for (final doc in snapshot.docs) {
-            final data = doc.data();
-            final missionId = data['missionId'] as String? ?? '';
-            if (missionId.isEmpty) continue;
+      try {
+        final Map<String, UserMission> result = {};
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final missionId = data['missionId'] as String? ?? '';
+          if (missionId.isEmpty) continue;
 
-            final newMission = UserMission.fromFirestore(doc);
-            final existing = result[missionId];
+          final newMission = UserMission.fromFirestore(doc);
+          final existing = result[missionId];
 
-            if (existing == null) {
-              result[missionId] = newMission;
-              continue;
-            }
-
-            final preferredDocId = _userMissionDocId(userId, missionId);
-            final isNewPreferredId = doc.id == preferredDocId;
-            final isExistingPreferredId = existing.id == preferredDocId;
-
-            if (isNewPreferredId && !isExistingPreferredId) {
-              result[missionId] = newMission;
-              continue;
-            }
-
-            final newStart = newMission.startTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final existingStart = existing.startTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-
-            if (newStart.isAfter(existingStart)) {
-              result[missionId] = newMission;
-            }
+          if (existing == null) {
+            result[missionId] = newMission;
+            continue;
           }
 
-          _userMissions = result;
-          // 디버그: 실시간 스냅샷으로부터 미션 진행도 로그
-          for (final entry in _userMissions.entries) {
-            debugPrint('📡 [listenUserMissions] missionId=${entry.key}, progress=${entry.value.progress}, completed=${entry.value.completed}');
+          final preferredDocId = _userMissionDocId(userId, missionId);
+          final isNewPreferredId = doc.id == preferredDocId;
+          final isExistingPreferredId = existing.id == preferredDocId;
+
+          if (isNewPreferredId && !isExistingPreferredId) {
+            result[missionId] = newMission;
+            continue;
           }
-          notifyListeners();
-        } catch (e) {
-          debugPrint('실시간 사용자 미션 상태 처리 오류: $e');
+
+          final newStart = newMission.startTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final existingStart = existing.startTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+          if (newStart.isAfter(existingStart)) {
+            result[missionId] = newMission;
+          }
         }
+
+        _userMissions = result;
+        // 디버그: 실시간 스냅샷으로부터 미션 진행도 로그
+        for (final entry in _userMissions.entries) {
+          debugPrint('📡 [listenUserMissions] missionId=${entry.key}, progress=${entry.value.progress}, completed=${entry.value.completed}');
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('실시간 사용자 미션 상태 처리 오류: $e');
+      }
       },
       onError: (error) {
         debugPrint('❌ userMissions 스트림 오류: $error');
@@ -2628,13 +2628,13 @@ class DataService extends ChangeNotifier {
       } else {
         // 문서가 없으면 생성 (일반적으로는 _initializeUserMissions에서 이미 생성됨)
         debugPrint('📝 [startMission] 문서 없음, 생성 시도: missionId=$missionId, userId=$userId');
-        final dataToSet = <String, dynamic>{
-          'userId': userId,
-          'missionId': missionId,
-          'startTime': FieldValue.serverTimestamp(),
-          'progress': 0,
-          'completed': false,
-        };
+      final dataToSet = <String, dynamic>{
+        'userId': userId,
+        'missionId': missionId,
+        'startTime': FieldValue.serverTimestamp(),
+        'progress': 0,
+        'completed': false,
+      };
         if (mission.type == 'like_click') {
           dataToSet['likedPostIds'] = [];
         }
@@ -2992,19 +2992,19 @@ class DataService extends ChangeNotifier {
             );
             
             if (success) {
-              debugPrint('✅ 첫 작품 업로드 미션 완료: $userId (300코인 지급)');
-              
+            debugPrint('✅ 첫 작품 업로드 미션 완료: $userId (300코인 지급)');
+            
               // 사용자 미션 상태 새로고침 (완료 상태 반영)
-              await getUserMissions(userId);
-              
+            await getUserMissions(userId);
+            
               // _userMissions가 업데이트되었으므로 getAvailableMissions가 즉시 반영됨
-              // UI 업데이트 (미션 목록에서 즉시 제거)
-              notifyListeners();
+            // UI 업데이트 (미션 목록에서 즉시 제거)
+            notifyListeners();
               
               debugPrint('✅ 미션 목록 UI 업데이트 완료 - 첫 작품 업로드 미션이 제거되었습니다.');
             } else {
               debugPrint('❌ 첫 작품 업로드 미션 완료 실패: $userId');
-            }
+          }
           } else {
             debugPrint('ℹ️ 이미 완료한 첫 작품 업로드 미션: $userId');
           }
@@ -3403,7 +3403,18 @@ class DataService extends ChangeNotifier {
       debugPrint('   result.data: $result.data');
       debugPrint('───────────────────────────────────────');
       
-      final data = result.data as Map<String, dynamic>?;
+      // 안전한 타입 변환: _Map<Object?, Object?>를 Map<String, dynamic>으로 변환
+      Map<String, dynamic>? data;
+      if (result.data != null) {
+        if (result.data is Map) {
+          data = Map<String, dynamic>.from(result.data as Map);
+        } else {
+          debugPrint('⚠️ result.data가 Map 타입이 아닙니다: ${result.data.runtimeType}');
+          data = null;
+        }
+      } else {
+        data = null;
+      }
       
       if (data == null) {
         debugPrint('❌ 응답 데이터가 null입니다.');
@@ -3508,7 +3519,7 @@ class DataService extends ChangeNotifier {
   }
 
   // 기프티콘 바코드 정보 재조회 (이미 구매한 기프티콘의 바코드 정보를 다시 가져오기)
-  Future<Map<String, dynamic>?> refreshGiftCardBarcode(String trId) async {
+  Future<Map<String, dynamic>?> refreshGiftCardBarcode(String trId, {bool useResend = false}) async {
     try {
       debugPrint('🔄 기프티콘 바코드 정보 재조회 시작: trId=$trId');
       
@@ -3516,9 +3527,21 @@ class DataService extends ChangeNotifier {
       final callable = functions.httpsCallable('refreshGiftCardBarcode');
       final result = await callable.call({
         'trId': trId,
+        'useResend': useResend, // 재전송 API 사용 여부
       });
       
-      final data = result.data as Map<String, dynamic>?;
+      // 안전한 타입 변환: _Map<Object?, Object?>를 Map<String, dynamic>으로 변환
+      Map<String, dynamic>? data;
+      if (result.data != null) {
+        if (result.data is Map) {
+          data = Map<String, dynamic>.from(result.data as Map);
+        } else {
+          debugPrint('⚠️ result.data가 Map 타입이 아닙니다: ${result.data.runtimeType}');
+          data = null;
+        }
+      } else {
+        data = null;
+      }
       
       if (data != null && data['success'] == true) {
         debugPrint('✅ 바코드 정보 재조회 성공');

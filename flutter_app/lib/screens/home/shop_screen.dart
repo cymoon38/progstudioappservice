@@ -1,7 +1,6 @@
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -23,7 +22,7 @@ class _ShopScreenState extends State<ShopScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.white,
       body: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: ClampingScrollPhysics(),
@@ -699,9 +698,52 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
       final dataService = Provider.of<DataService>(context, listen: false);
       final ownedCards = await dataService.getOwnedGiftCards(authService.user!.uid);
       
+      // 바코드 정보가 있는 기프티콘만 필터링
+      final filteredCards = ownedCards.where((card) {
+        final giftCardInfo = card['giftCardInfo'];
+        if (giftCardInfo == null) return false;
+        
+        // giftCardInfo가 Map인지 확인
+        Map<String, dynamic>? infoMap;
+        if (giftCardInfo is Map) {
+          infoMap = Map<String, dynamic>.from(giftCardInfo);
+        } else {
+          return false;
+        }
+        
+        // 유효한 바코드 또는 PIN 번호가 있는지 확인
+        String? extractValidBarcodeOrPin(dynamic value) {
+          if (value == null) return null;
+          final str = value.toString().trim();
+          if (str.isEmpty || str == '발행' || str == '발행됨' || str == 'issued') return null;
+          if (RegExp(r'^[0-9A-Za-z]+$').hasMatch(str) && str.length >= 3) {
+            return str;
+          }
+          return null;
+        }
+        
+        final barcode = extractValidBarcodeOrPin(infoMap['barcode']) ??
+                        extractValidBarcodeOrPin(infoMap['barcodeNumber']) ??
+                        extractValidBarcodeOrPin(infoMap['barcode_no']) ??
+                        extractValidBarcodeOrPin(infoMap['pinNo']);
+        final pinNumber = extractValidBarcodeOrPin(infoMap['pinNumber']) ??
+                         extractValidBarcodeOrPin(infoMap['pin']) ??
+                         extractValidBarcodeOrPin(infoMap['pin_no']) ??
+                         extractValidBarcodeOrPin(infoMap['pinNo']);
+        final barcodeImage = infoMap['barcodeImage'] ?? 
+                            infoMap['barcodeImageUrl'] ?? 
+                            infoMap['couponImgUrl'] ?? 
+                            '';
+        
+        // 바코드, PIN, 또는 바코드 이미지 중 하나라도 있으면 표시
+        return (barcode != null && barcode.isNotEmpty) || 
+               (pinNumber != null && pinNumber.isNotEmpty) || 
+               (barcodeImage != null && barcodeImage.toString().trim().isNotEmpty);
+      }).toList();
+      
       if (mounted) {
         setState(() {
-          _ownedCards = ownedCards;
+          _ownedCards = filteredCards;
           _isLoading = false;
           _hasError = false;
         });
@@ -786,7 +828,6 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
                 ),
               );
             },
-            onRefresh: _loadOwnedCards,
           );
         },
       ),
@@ -798,12 +839,10 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
 class _OwnedGiftCardItem extends StatefulWidget {
   final Map<String, dynamic> card;
   final VoidCallback onTap;
-  final VoidCallback? onRefresh;
 
   const _OwnedGiftCardItem({
     required this.card,
     required this.onTap,
-    this.onRefresh,
   });
 
   @override
@@ -811,56 +850,6 @@ class _OwnedGiftCardItem extends StatefulWidget {
 }
 
 class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
-  bool _isRefreshing = false;
-
-  Future<void> _refreshBarcode() async {
-    if (_isRefreshing) return;
-    
-    setState(() {
-      _isRefreshing = true;
-    });
-
-    try {
-      final trId = widget.card['trId'] as String?;
-      if (trId == null || trId.isEmpty) {
-        throw Exception('거래 ID가 없습니다.');
-      }
-
-      final dataService = Provider.of<DataService>(context, listen: false);
-      await dataService.refreshGiftCardBarcode(trId);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('바코드 정보를 다시 조회했습니다.'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-        
-        // 목록 새로고침
-        if (widget.onRefresh != null) {
-          widget.onRefresh!();
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('바코드 정보 조회 실패: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isRefreshing = false;
-        });
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -998,36 +987,13 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
                               ),
                             );
                           } else {
-                            return Row(
-                              children: [
-                                Text(
-                                  '바코드 정보 없음',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.orange[700],
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                _isRefreshing
-                                    ? const SizedBox(
-                                        width: 12,
-                                        height: 12,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : TextButton(
-                                        onPressed: _refreshBarcode,
-                                        style: TextButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          minimumSize: Size.zero,
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                        child: const Text(
-                                          '다시 조회',
-                                          style: TextStyle(fontSize: 11),
-                                        ),
-                                      ),
-                              ],
+                            return Text(
+                              '사용 가능',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w600,
+                              ),
                             );
                           }
                         },
@@ -1049,7 +1015,7 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
 }
 
 // 기프티콘 바코드 표시 화면
-class _GiftCardBarcodeScreen extends StatelessWidget {
+class _GiftCardBarcodeScreen extends StatefulWidget {
   final Map<String, dynamic> card;
 
   const _GiftCardBarcodeScreen({
@@ -1057,7 +1023,22 @@ class _GiftCardBarcodeScreen extends StatelessWidget {
   });
 
   @override
+  State<_GiftCardBarcodeScreen> createState() => _GiftCardBarcodeScreenState();
+}
+
+class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
+  Map<String, dynamic>? _currentCard;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentCard = widget.card;
+  }
+
+
+  @override
   Widget build(BuildContext context) {
+    final card = _currentCard ?? widget.card;
     final goodsName = card['goodsName'] ?? '기프티콘';
     // Firestore 데이터를 안전하게 변환
     Map<String, dynamic>? giftCardInfo;
@@ -1136,6 +1117,8 @@ class _GiftCardBarcodeScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -1153,26 +1136,13 @@ class _GiftCardBarcodeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 40),
             
-            // 바코드 이미지
-            if (barcodeImageUrl.isNotEmpty)
-              // API에서 제공한 바코드 이미지 URL이 있으면 사용
-              CachedNetworkImage(
-                imageUrl: barcodeImageUrl,
-                width: double.infinity,
-                height: 200,
-                fit: BoxFit.contain,
-                placeholder: (context, url) => const CircularProgressIndicator(),
-                errorWidget: (context, url, error) {
-                  // 이미지 로드 실패 시 바코드 번호로 생성
-                  if (barcode.isNotEmpty) {
-                    return _BarcodeImage(barcode: barcode);
-                  }
-                  return const Icon(Icons.error);
-                },
-              )
-            else if (barcode.isNotEmpty)
+            // 바코드 이미지 (앱에서 자체 생성)
+            if (barcode.isNotEmpty)
               // 바코드 번호가 있으면 바코드 이미지 자동 생성
               _BarcodeImage(barcode: barcode)
+            else if (pinNumber.isNotEmpty)
+              // PIN 번호가 있으면 PIN 번호로 바코드 이미지 생성
+              _BarcodeImage(barcode: pinNumber)
             else
               Container(
                 padding: const EdgeInsets.all(20),
@@ -1194,7 +1164,7 @@ class _GiftCardBarcodeScreen extends StatelessWidget {
             
             const SizedBox(height: 30),
             
-            // PIN 번호
+            // PIN 번호 (바코드 이미지가 PIN 번호로 생성된 경우에도 PIN 번호 텍스트 표시)
             if (pinNumber.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(16),
@@ -1222,6 +1192,19 @@ class _GiftCardBarcodeScreen extends StatelessWidget {
                         letterSpacing: 1,
                       ),
                     ),
+                    if (barcode.isEmpty && barcodeImageUrl.isEmpty)
+                      // PIN 번호로 바코드를 생성한 경우 안내
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          '(위 바코드는 PIN 번호로 생성되었습니다)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1413,9 +1396,52 @@ class _OwnedGiftCardListTabSliverState extends State<_OwnedGiftCardListTabSliver
       final dataService = Provider.of<DataService>(context, listen: false);
       final ownedCards = await dataService.getOwnedGiftCards(authService.user!.uid);
       
+      // 바코드 정보가 있는 기프티콘만 필터링
+      final filteredCards = ownedCards.where((card) {
+        final giftCardInfo = card['giftCardInfo'];
+        if (giftCardInfo == null) return false;
+        
+        // giftCardInfo가 Map인지 확인
+        Map<String, dynamic>? infoMap;
+        if (giftCardInfo is Map) {
+          infoMap = Map<String, dynamic>.from(giftCardInfo);
+        } else {
+          return false;
+        }
+        
+        // 유효한 바코드 또는 PIN 번호가 있는지 확인
+        String? extractValidBarcodeOrPin(dynamic value) {
+          if (value == null) return null;
+          final str = value.toString().trim();
+          if (str.isEmpty || str == '발행' || str == '발행됨' || str == 'issued') return null;
+          if (RegExp(r'^[0-9A-Za-z]+$').hasMatch(str) && str.length >= 3) {
+            return str;
+          }
+          return null;
+        }
+        
+        final barcode = extractValidBarcodeOrPin(infoMap['barcode']) ??
+                        extractValidBarcodeOrPin(infoMap['barcodeNumber']) ??
+                        extractValidBarcodeOrPin(infoMap['barcode_no']) ??
+                        extractValidBarcodeOrPin(infoMap['pinNo']);
+        final pinNumber = extractValidBarcodeOrPin(infoMap['pinNumber']) ??
+                         extractValidBarcodeOrPin(infoMap['pin']) ??
+                         extractValidBarcodeOrPin(infoMap['pin_no']) ??
+                         extractValidBarcodeOrPin(infoMap['pinNo']);
+        final barcodeImage = infoMap['barcodeImage'] ?? 
+                            infoMap['barcodeImageUrl'] ?? 
+                            infoMap['couponImgUrl'] ?? 
+                            '';
+        
+        // 바코드, PIN, 또는 바코드 이미지 중 하나라도 있으면 표시
+        return (barcode != null && barcode.isNotEmpty) || 
+               (pinNumber != null && pinNumber.isNotEmpty) || 
+               (barcodeImage != null && barcodeImage.toString().trim().isNotEmpty);
+      }).toList();
+      
       if (mounted) {
         setState(() {
-          _ownedCards = ownedCards;
+          _ownedCards = filteredCards;
           _isLoading = false;
           _hasError = false;
         });

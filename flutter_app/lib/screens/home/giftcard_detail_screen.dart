@@ -117,7 +117,11 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
         debugPrint('💰 남은 코인: ${result['remainingCoins']}');
         
         // 바코드 정보가 있으면 바코드 화면으로 이동
-        final purchaseInfo = result['purchaseInfo'] as Map<String, dynamic>?;
+        // 안전한 타입 변환: _Map<Object?, Object?>를 Map<String, dynamic>으로 변환
+        Map<String, dynamic>? purchaseInfo;
+        if (result['purchaseInfo'] != null && result['purchaseInfo'] is Map) {
+          purchaseInfo = Map<String, dynamic>.from(result['purchaseInfo'] as Map);
+        }
         final giftCardInfo = purchaseInfo?['giftCardInfo'];
         
         debugPrint('📋 giftCardInfo 존재 여부: ${giftCardInfo != null}');
