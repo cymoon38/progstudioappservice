@@ -233,6 +233,7 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      extendBody: true,
       appBar: AppBar(
         title: const Text('기프티콘 상세'),
         backgroundColor: Colors.white,
@@ -428,89 +429,44 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
                 ),
       // 구매 버튼 (추후 구현)
       bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 4,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
+        color: Colors.transparent,
         child: SafeArea(
-          child: ElevatedButton(
-            onPressed: _isPurchasing 
-                ? null 
-                : () {
-                    debugPrint('🔘 구매 버튼 onPressed 호출됨');
-                    debugPrint('📊 상태: _isPurchasing=$_isPurchasing, _detailData=${_detailData != null}');
-                    _handlePurchase();
-                  },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _isPurchasing ? Colors.grey : AppTheme.primaryColor,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: _isPurchasing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  _formatPrice(
-                    _detailData?['discountPrice'] ?? 
-                    widget.giftCard?.discountPrice ?? 0
-                  ),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: ElevatedButton(
+              onPressed: _isPurchasing 
+                  ? null 
+                  : () {
+                      debugPrint('🔘 구매 버튼 onPressed 호출됨');
+                      debugPrint('📊 상태: _isPurchasing=$_isPurchasing, _detailData=${_detailData != null}');
+                      _handlePurchase();
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isPurchasing ? Colors.grey : AppTheme.primaryColor,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'C',
+                elevation: 4,
+                shadowColor: Colors.black.withOpacity(0.3),
+              ),
+              child: _isPurchasing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text(
+                      '구매하기',
                       style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                         color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  '구매하기',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
             ),
           ),
         ),

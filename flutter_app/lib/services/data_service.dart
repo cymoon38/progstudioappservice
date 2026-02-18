@@ -3286,6 +3286,11 @@ class DataService extends ChangeNotifier {
       goodsimg: imageUrl,
       brandName: (data['brandName'] ?? '').toString(),
       goodsTypeNm: (data['goodsTypeNm'] ?? '').toString(),
+      // 카테고리 필드 우선순위: categoryName1 > category1Name > categoryName > goodsTypeNm
+      categoryName1: (data['categoryName1'] ?? 
+                      data['category1Name'] ?? 
+                      data['categoryName'] ?? 
+                      data['goodsTypeNm'] ?? '').toString(),
     );
   }
 
@@ -3350,6 +3355,42 @@ class DataService extends ChangeNotifier {
       debugPrint('❌ 기프티콘 목록 조회 오류: $e');
       debugPrint('📋 스택 트레이스: $stackTrace');
       return [];
+    }
+  }
+
+  // 브랜드 목록 조회
+  Future<Map<String, dynamic>?> getBrandList() async {
+    try {
+      debugPrint('🔍 브랜드 목록 조회 시작...');
+      final functions = FirebaseFunctions.instance;
+      final callable = functions.httpsCallable('getBrandList');
+      
+      debugPrint('📞 Cloud Function 호출 중...');
+      final result = await callable.call();
+      
+      debugPrint('✅ Cloud Function 응답 받음');
+      
+      final dynamic responseData = result.data;
+      if (responseData == null) {
+        debugPrint('❌ 응답 데이터가 null입니다.');
+        return null;
+      }
+      
+      final Map<String, dynamic> data = Map<String, dynamic>.from(
+        responseData is Map ? responseData : {}
+      );
+      
+      if (data['success'] == true) {
+        debugPrint('✅ 브랜드 목록 조회 성공: ${data['listNum']}개');
+        return data;
+      } else {
+        debugPrint('❌ 브랜드 목록 조회 실패: ${data['error']}');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ 브랜드 목록 조회 오류: $e');
+      debugPrint('📋 스택 트레이스: $stackTrace');
+      return null;
     }
   }
 
@@ -3629,6 +3670,7 @@ class GiftCard {
   final String goodsimg;
   final String brandName;
   final String goodsTypeNm;
+  final String categoryName1;
 
   GiftCard({
     required this.goodsCode,
@@ -3638,6 +3680,7 @@ class GiftCard {
     required this.goodsimg,
     required this.brandName,
     required this.goodsTypeNm,
+    required this.categoryName1,
   });
 }
 

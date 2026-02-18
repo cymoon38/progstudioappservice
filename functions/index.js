@@ -553,6 +553,8 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
     formData.append('dev_yn', 'N'); // 운영 환경
     formData.append('start', String(start));
     formData.append('size', String(size));
+    // 인기순 정렬 (API에서 지원하는 경우)
+    formData.append('sort', 'popular'); // 또는 'best', 'rank' 등 API에서 지원하는 값
     
     console.log('Form Data:', formData.toString());
     console.log('각 파라미터 확인:', {
@@ -587,13 +589,61 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
       console.log('   goodsImgS:', firstGoods.goodsImgS);
       console.log('   goodsImgB:', firstGoods.goodsImgB);
       console.log('   모든 키:', Object.keys(firstGoods));
+      // 카테고리 관련 필드 확인
+      console.log('📊 카테고리 관련 필드 확인:');
+      console.log('   categoryName1:', firstGoods.categoryName1);
+      console.log('   categoryName:', firstGoods.categoryName);
+      console.log('   category1Name:', firstGoods.category1Name);
+      console.log('   category2Name:', firstGoods.category2Name);
+      console.log('   goodsTypeNm:', firstGoods.goodsTypeNm);
+      // 인기 관련 필드 확인
+      console.log('📊 인기 관련 필드 확인:');
+      console.log('   saleCount:', firstGoods.saleCount);
+      console.log('   viewCount:', firstGoods.viewCount);
+      console.log('   rank:', firstGoods.rank);
+      console.log('   popular:', firstGoods.popular);
     }
 
     if (response.data.code === '0000') {
+      let goodsList = response.data.result?.goodsList || [];
+      
+      // 인기순 정렬 시도 (API가 sort 파라미터를 지원하지 않는 경우를 대비)
+      // saleCount, viewCount, rank 등 인기 관련 필드가 있으면 정렬
+      if (goodsList.length > 0) {
+        const firstGoods = goodsList[0];
+        // 판매량 기준 정렬 시도
+        if (firstGoods.saleCount !== undefined) {
+          goodsList = goodsList.sort((a, b) => {
+            const saleCountA = parseInt(a.saleCount) || 0;
+            const saleCountB = parseInt(b.saleCount) || 0;
+            return saleCountB - saleCountA; // 내림차순 (판매량 많은 순)
+          });
+          console.log('✅ 판매량 기준으로 인기순 정렬 완료');
+        }
+        // 조회수 기준 정렬 시도
+        else if (firstGoods.viewCount !== undefined) {
+          goodsList = goodsList.sort((a, b) => {
+            const viewCountA = parseInt(a.viewCount) || 0;
+            const viewCountB = parseInt(b.viewCount) || 0;
+            return viewCountB - viewCountA; // 내림차순 (조회수 많은 순)
+          });
+          console.log('✅ 조회수 기준으로 인기순 정렬 완료');
+        }
+        // rank 필드 기준 정렬 시도
+        else if (firstGoods.rank !== undefined) {
+          goodsList = goodsList.sort((a, b) => {
+            const rankA = parseInt(a.rank) || 999999;
+            const rankB = parseInt(b.rank) || 999999;
+            return rankA - rankB; // 오름차순 (랭크 낮은 순 = 인기 높은 순)
+          });
+          console.log('✅ 랭크 기준으로 인기순 정렬 완료');
+        }
+      }
+      
       return {
         success: true,
         listNum: response.data.result?.listNum || 0,
-        goodsList: response.data.result?.goodsList || [],
+        goodsList: goodsList,
       };
     } else {
       console.error('기프트쇼비즈 API 오류:', response.data.message);
@@ -616,6 +666,80 @@ async function getGiftCardList(start = 1, size = 20, authCode, authToken) {
     };
   }
 }
+
+// 브랜드 목록 조회 함수
+async function getBrandList(authCode, authToken) {
+  try {
+    console.log('🔄 브랜드 목록 조회 시작...');
+    
+    const formData = new URLSearchParams();
+    formData.append('api_code', '0102');
+    formData.append('custom_auth_code', authCode.trim());
+    formData.append('custom_auth_token', authToken.trim());
+    formData.append('dev_yn', 'N');
+    
+    console.log('📞 브랜드 API 호출:', `${GIFTSHOWBIZ_BASE_URL}/brands`);
+    
+    const response = await axios.post(
+      `${GIFTSHOWBIZ_BASE_URL}/brands`,
+      formData.toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
+    
+    console.log('✅ 브랜드 API 응답:', response.data.code);
+    
+    if (response.data.code === '0000') {
+      const brandList = response.data.result?.brandList || [];
+      console.log(`✅ 브랜드 목록 조회 성공: ${brandList.length}개`);
+      return {
+        success: true,
+        brandList: brandList,
+        listNum: response.data.result?.listNum || 0,
+      };
+    } else {
+      console.error('❌ 브랜드 API 오류:', response.data.message);
+      return {
+        success: false,
+        error: response.data.message || '알 수 없는 오류',
+      };
+    }
+  } catch (e) {
+    console.error('❌ 브랜드 API 호출 오류:', e);
+    if (e.response) {
+      console.error('API 응답 상태:', e.response.status);
+      console.error('API 응답 데이터:', JSON.stringify(e.response.data, null, 2));
+    }
+    return {
+      success: false,
+      error: e.message || 'API 호출 실패',
+    };
+  }
+}
+
+// 브랜드 목록 조회 API (HTTP 호출 가능)
+exports.getBrandList = functions.https.onCall(async (data, context) => {
+  try {
+    const authCode = getSecret('GIFTSHOWBIZ_AUTH_CODE');
+    const authToken = getSecret('GIFTSHOWBIZ_AUTH_TOKEN');
+    
+    if (!authCode || !authToken) {
+      throw new functions.https.HttpsError('internal', 'API 인증 정보를 가져올 수 없습니다.');
+    }
+    
+    const result = await getBrandList(authCode, authToken);
+    return result;
+  } catch (e) {
+    console.error('❌ 브랜드 목록 조회 오류:', e);
+    if (e instanceof functions.https.HttpsError) {
+      throw e;
+    }
+    throw new functions.https.HttpsError('internal', `브랜드 목록 조회 실패: ${e.message}`);
+  }
+});
 
 // 상품 리스트 조회 API (HTTP 호출 가능)
 exports.getGiftCardList = functions.https.onCall(async (data, context) => {
@@ -904,6 +1028,13 @@ exports.getGiftCardDetail = functions.https.onCall(async (data, context) => {
         console.log(`📋 goodsDetail 타입: ${typeof goodsDetail}`);
         if (typeof goodsDetail === 'object') {
           console.log(`📋 goodsDetail 키 목록:`, Object.keys(goodsDetail));
+          // 카테고리 관련 필드 확인
+          console.log('📊 상세정보 카테고리 관련 필드 확인:');
+          console.log('   categoryName1:', goodsDetail.categoryName1);
+          console.log('   categoryName:', goodsDetail.categoryName);
+          console.log('   category1Name:', goodsDetail.category1Name);
+          console.log('   category2Name:', goodsDetail.category2Name);
+          console.log('   goodsTypeNm:', goodsDetail.goodsTypeNm);
           console.log(`📋 goodsDetail 전체 내용:`, JSON.stringify(goodsDetail, null, 2));
         } else {
           console.log(`📋 goodsDetail 값:`, goodsDetail);

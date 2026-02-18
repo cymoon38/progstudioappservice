@@ -17,7 +17,7 @@ class ShopScreen extends StatefulWidget {
 }
 
 class _ShopScreenState extends State<ShopScreen> {
-  int _selectedTab = 0; // 0: 아이템, 1: 스킨, 2: 기프티콘, 3: 보유중
+  int _selectedTab = 0; // 0: 아이템, 1: 기프티콘, 2: 보유중
 
   @override
   Widget build(BuildContext context) {
@@ -60,19 +60,14 @@ class _ShopScreenState extends State<ShopScreen> {
                       onTap: () => setState(() => _selectedTab = 0),
                     ),
                     _TabButton(
-                      label: '스킨',
+                      label: '기프티콘',
                       isSelected: _selectedTab == 1,
                       onTap: () => setState(() => _selectedTab = 1),
                     ),
                     _TabButton(
-                      label: '기프티콘',
+                      label: '보유중',
                       isSelected: _selectedTab == 2,
                       onTap: () => setState(() => _selectedTab = 2),
-                    ),
-                    _TabButton(
-                      label: '보유중',
-                      isSelected: _selectedTab == 3,
-                      onTap: () => setState(() => _selectedTab = 3),
                     ),
                   ],
                 ),
@@ -94,13 +89,8 @@ class _ShopScreenState extends State<ShopScreen> {
           child: _buildItemTab(),
         );
       case 1:
-        return SliverFillRemaining(
-          hasScrollBody: false,
-          child: _buildSkinTab(),
-        );
-      case 2:
         return _buildGiftCardTabSliver();
-      case 3:
+      case 2:
         return _buildOwnedTabSliver();
       default:
         return SliverFillRemaining(
@@ -115,10 +105,8 @@ class _ShopScreenState extends State<ShopScreen> {
       case 0:
         return _buildItemTab();
       case 1:
-        return _buildSkinTab();
-      case 2:
         return _buildGiftCardTab();
-      case 3:
+      case 2:
         return _buildOwnedTab();
       default:
         return _buildItemTab();
@@ -137,17 +125,6 @@ class _ShopScreenState extends State<ShopScreen> {
     );
   }
 
-  Widget _buildSkinTab() {
-    return Center(
-      child: Text(
-        '스킨',
-        style: TextStyle(
-          fontSize: 18,
-          color: AppTheme.textSecondary,
-        ),
-      ),
-    );
-  }
 
   Widget _buildGiftCardTab() {
     return _GiftCardListTab();
@@ -359,8 +336,37 @@ class _GiftCardListTabState extends State<_GiftCardListTab> {
 
 class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
   List<GiftCard> _giftCards = [];
+  List<GiftCard> _allGiftCards = [];
+  // 고정된 카테고리 목록
+  final List<String> _categories = [
+    '전체',
+    '커피/음료',
+    '베이커리/도넛',
+    '아이스크림',
+    '편의점',
+    '피자/버거/치킨',
+    '영화/음악/독서',
+    '상품권/마트/페이',
+  ];
+  
+  // 카테고리 매핑 (UI 카테고리 -> API 카테고리 키워드)
+  final Map<String, List<String>> _categoryMapping = {
+    '커피/음료': ['커피', '음료', '카페', '스타벅스', '이디야', '투썸', '할리스'],
+    '베이커리/도넛': ['베이커리', '도넛', '빵', '케이크', '파리바게뜨', '뚜레쥬르'],
+    '아이스크림': ['아이스크림', '빙수', '베스킨라빈스', '하겐다즈'],
+    '편의점': ['편의점', 'CU', 'GS25', '세븐일레븐', '이마트24'],
+    '피자/버거/치킨': ['피자', '버거', '치킨', '도미노', '피자헛', '맥도날드', '버거킹', 'KFC', 'BBQ', '교촌'],
+    '영화/음악/독서': ['영화', '음악', '독서', 'CGV', '롯데시네마', '메가박스', '멜론', 'YES24', '교보문고'],
+    '상품권/마트/페이': ['상품권', '마트', '페이', '해피머니', '도서문화상품권', '이마트', '롯데마트', '네이버페이', '카카오페이'],
+  };
+  
   bool _isLoading = true;
   bool _hasError = false;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  int _currentPage = 1;
+  final int _pageSize = 50; // 카테고리별 50개씩
+  String? _selectedCategory;
 
   @override
   void initState() {
@@ -368,40 +374,118 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
     _loadGiftCards();
   }
 
-  Future<void> _loadGiftCards() async {
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-    });
+  Future<void> _loadGiftCards({bool loadMore = false}) async {
+    if (loadMore) {
+      if (_isLoadingMore || !_hasMore) return;
+      setState(() {
+        _isLoadingMore = true;
+      });
+    } else {
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+        _currentPage = 1;
+        _hasMore = true;
+        _allGiftCards = [];
+        _giftCards = [];
+      });
+    }
 
     try {
       final dataService = Provider.of<DataService>(context, listen: false);
       
-      debugPrint('🔄 기프티콘 목록 로드 시작...');
+      // 카테고리별로 상품을 가져오기 위해 더 많은 데이터를 로드
+      final loadSize = _selectedCategory == null || _selectedCategory == '전체' 
+          ? _pageSize 
+          : _pageSize * 10; // 카테고리 필터링을 위해 더 많이 로드 (50개 찾을 때까지)
       
-      // 최신 데이터 먼저 가져오기
-      final latestList = await dataService.getGiftCardList(start: 1, size: 100);
+      debugPrint('🔄 기프티콘 목록 로드 시작... (페이지: $_currentPage, 크기: $loadSize, 카테고리: $_selectedCategory)');
+      
+      // 페이지네이션으로 데이터 가져오기
+      final latestList = await dataService.getGiftCardList(
+        start: _currentPage, 
+        size: loadSize
+      );
       debugPrint('📊 최신 데이터: ${latestList.length}개');
       
       if (mounted) {
         if (latestList.isNotEmpty) {
-          setState(() {
-            _giftCards = latestList;
-            _isLoading = false;
-            _hasError = false;
-          });
-          debugPrint('✅ 기프티콘 목록 표시: ${latestList.length}개');
-        } else {
-          // 최신 데이터가 없으면 캐시 확인
-          debugPrint('📦 최신 데이터 없음, 캐시 확인 중...');
-          final cachedList = await dataService.getCachedGiftCardList();
-          debugPrint('📦 캐시 데이터: ${cachedList.length}개');
+          // 카테고리 필터 적용 (categoryName1 기준)
+          List<GiftCard> filteredList = latestList;
+          if (_selectedCategory != null && _selectedCategory!.isNotEmpty && _selectedCategory != '전체') {
+            // 카테고리 매핑을 사용하여 필터링
+            final mappingKeywords = _categoryMapping[_selectedCategory] ?? [_selectedCategory!];
+            filteredList = latestList.where((card) {
+              final category = card.categoryName1.toLowerCase();
+              // 매핑된 키워드 중 하나라도 포함되어 있으면 포함
+              for (var keyword in mappingKeywords) {
+                if (category.contains(keyword.toLowerCase()) || 
+                    keyword.toLowerCase().contains(category)) {
+                  return true;
+                }
+              }
+              // 직접 매칭도 시도
+              final selected = _selectedCategory!.toLowerCase();
+              return category == selected || 
+                     category.contains(selected) || 
+                     selected.contains(category);
+            }).toList();
+            
+            // 카테고리별로 50개만 표시
+            if (filteredList.length > _pageSize) {
+              filteredList = filteredList.take(_pageSize).toList();
+            }
+            
+            debugPrint('🔍 카테고리 필터링: "$_selectedCategory" -> ${filteredList.length}개 (전체: ${latestList.length}개)');
+            if (filteredList.isEmpty && latestList.isNotEmpty) {
+              debugPrint('⚠️ 필터링 결과가 비어있습니다.');
+              debugPrint('   첫 번째 상품의 카테고리: ${latestList[0].categoryName1}');
+              debugPrint('   첫 번째 상품의 goodsTypeNm: ${latestList[0].goodsTypeNm}');
+            }
+          } else {
+            // 전체는 50개만 표시
+            if (filteredList.length > _pageSize) {
+              filteredList = filteredList.take(_pageSize).toList();
+            }
+          }
           
           setState(() {
-            _giftCards = cachedList;
+            if (loadMore) {
+              _allGiftCards.addAll(filteredList);
+            } else {
+              _allGiftCards = filteredList;
+            }
+            _currentPage++;
+            // 카테고리 선택 시 필터링된 결과가 50개 미만이면 더 이상 없음
+            _hasMore = _selectedCategory == null || _selectedCategory == '전체'
+                ? filteredList.length >= _pageSize
+                : filteredList.length >= _pageSize && latestList.length >= loadSize;
+            _applyCategoryFilter();
             _isLoading = false;
-            _hasError = cachedList.isEmpty; // 캐시도 없으면 에러로 표시
+            _isLoadingMore = false;
+            _hasError = false;
           });
+          debugPrint('✅ 기프티콘 목록 표시: ${_allGiftCards.length}개 (더 있음: $_hasMore)');
+        } else {
+          if (loadMore) {
+            setState(() {
+              _hasMore = false;
+              _isLoadingMore = false;
+            });
+          } else {
+            // 최신 데이터가 없으면 캐시 확인
+            debugPrint('📦 최신 데이터 없음, 캐시 확인 중...');
+            final cachedList = await dataService.getCachedGiftCardList();
+            debugPrint('📦 캐시 데이터: ${cachedList.length}개');
+            
+            setState(() {
+              _allGiftCards = cachedList;
+              _applyCategoryFilter();
+              _isLoading = false;
+              _hasError = cachedList.isEmpty; // 캐시도 없으면 에러로 표시
+            });
+            
+          }
         }
       }
     } catch (e, stackTrace) {
@@ -409,10 +493,41 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       debugPrint('📋 스택 트레이스: $stackTrace');
       if (mounted) {
         setState(() {
-          _hasError = true;
-          _isLoading = false;
+          if (loadMore) {
+            _isLoadingMore = false;
+          } else {
+            _hasError = true;
+            _isLoading = false;
+          }
         });
       }
+    }
+  }
+
+  // 카테고리 필터 적용
+  void _applyCategoryFilter() {
+    if (_selectedCategory == null || _selectedCategory!.isEmpty || _selectedCategory == '전체') {
+      _giftCards = _allGiftCards;
+    } else {
+      // 카테고리 매핑을 사용하여 필터링
+      final mappingKeywords = _categoryMapping[_selectedCategory] ?? [_selectedCategory!];
+      _giftCards = _allGiftCards.where((card) {
+        final category = card.categoryName1.toLowerCase();
+        // 매핑된 키워드 중 하나라도 포함되어 있으면 포함
+        for (var keyword in mappingKeywords) {
+          if (category.contains(keyword.toLowerCase()) || 
+              keyword.toLowerCase().contains(category)) {
+            return true;
+          }
+        }
+        // 직접 매칭도 시도
+        final selected = _selectedCategory!.toLowerCase();
+        return category == selected || 
+               category.contains(selected) || 
+               selected.contains(category);
+      }).toList();
+      
+      debugPrint('🔍 카테고리 필터 적용: "$_selectedCategory" -> ${_giftCards.length}개 (전체: ${_allGiftCards.length}개)');
     }
   }
 
@@ -451,7 +566,7 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       );
     }
 
-    if (_giftCards.isEmpty) {
+    if (_allGiftCards.isEmpty) {
       return const SliverFillRemaining(
         hasScrollBody: false,
         child: Center(
@@ -463,23 +578,119 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       );
     }
 
-    return SliverPadding(
-      padding: const EdgeInsets.all(16),
-      sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.65, // 높이 조정 (정보 영역 공간 확보)
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
+    final categories = _categories;
+    
+    return SliverMainAxisGroup(
+      slivers: [
+        // 카테고리 필터
+        SliverToBoxAdapter(
+          child: Container(
+            height: 50,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: categories.length,
+              itemBuilder: (context, index) {
+                final category = categories[index];
+                final isSelected = (category == '전체' && _selectedCategory == null) ||
+                                  (category != '전체' && category == _selectedCategory);
+                
+                return Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedCategory = category == '전체' ? null : category;
+                        // 카테고리 변경 시 초기화하고 다시 로드
+                        _currentPage = 1;
+                        _hasMore = true;
+                        _allGiftCards = [];
+                        _giftCards = [];
+                      });
+                      _loadGiftCards();
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.black : Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? Colors.black : Colors.grey[300]!,
+                          width: 1,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          category,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: isSelected ? Colors.white : Colors.grey[700],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            final giftCard = _giftCards[index];
-            return _GiftCardItem(giftCard: giftCard);
-          },
-          childCount: _giftCards.length,
-        ),
-      ),
+        // 기프티콘 목록
+        if (_giftCards.isEmpty)
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Text(
+                '선택한 카테고리에 기프티콘이 없습니다',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+          )
+        else
+          SliverMainAxisGroup(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 0.65,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      if (index == _giftCards.length - 1 && _hasMore && !_isLoadingMore) {
+                        // 마지막 아이템에 도달하면 추가 로드
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _loadGiftCards(loadMore: true);
+                        });
+                      }
+                      if (index >= _giftCards.length) {
+                        return null;
+                      }
+                      final giftCard = _giftCards[index];
+                      return _GiftCardItem(giftCard: giftCard);
+                    },
+                    childCount: _giftCards.length + (_isLoadingMore ? 1 : 0),
+                  ),
+                ),
+              ),
+              // 로딩 인디케이터
+              if (_isLoadingMore)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+      ],
     );
   }
 }
@@ -509,50 +720,47 @@ class _GiftCardItem extends StatelessWidget {
         );
       },
       borderRadius: BorderRadius.circular(12),
-      child: Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 이미지 (고정 비율)
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: imageUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      placeholder: (context, url) => Container(
+          // 이미지 (고정 비율, 둥근 네모)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: imageUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        placeholder: (context, url) => Container(
+                          color: Colors.grey[200],
+                          child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) {
+                          debugPrint('❌ 이미지 로드 실패: $url - $error');
+                          return Container(
+                            color: Colors.grey[200],
+                            child: const Icon(
+                              Icons.image_not_supported,
+                              color: Colors.grey,
+                            ),
+                          );
+                        },
+                      )
+                    : Container(
                         color: Colors.grey[200],
-                        child: const Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                        child: const Icon(
+                          Icons.image_not_supported,
+                          color: Colors.grey,
                         ),
                       ),
-                      errorWidget: (context, url, error) {
-                        debugPrint('❌ 이미지 로드 실패: $url - $error');
-                        return Container(
-                          color: Colors.grey[200],
-                          child: const Icon(
-                            Icons.image_not_supported,
-                            color: Colors.grey,
-                          ),
-                        );
-                      },
-                    )
-                  : Container(
-                      color: Colors.grey[200],
-                      child: const Icon(
-                        Icons.image_not_supported,
-                        color: Colors.grey,
-                      ),
-                    ),
+              ),
             ),
           ),
           // 정보 영역 (고정 높이, 오버플로우 방지)
@@ -590,8 +798,8 @@ class _GiftCardItem extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const Spacer(),
-                  // 가격 및 코인 아이콘 (상품명 아래에 표시)
+                  const SizedBox(height: 4),
+                  // 가격 및 코인 아이콘 (상품명 바로 아래에 표시)
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -634,12 +842,12 @@ class _GiftCardItem extends StatelessWidget {
                       ),
                     ],
                   ),
+                  const Spacer(),
                 ],
               ),
             ),
           ),
         ],
-      ),
       ),
     );
   }
@@ -982,7 +1190,7 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
                               '사용 가능',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.green[700],
+                                color: AppTheme.primaryColor,
                                 fontWeight: FontWeight.w600,
                               ),
                             );
@@ -991,7 +1199,7 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
                               '사용 가능',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.green[700],
+                                color: AppTheme.primaryColor,
                                 fontWeight: FontWeight.w600,
                               ),
                             );
@@ -1028,11 +1236,42 @@ class _GiftCardBarcodeScreen extends StatefulWidget {
 
 class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
   Map<String, dynamic>? _currentCard;
+  Map<String, dynamic>? _detailData;
+  bool _isLoadingDetail = false;
 
   @override
   void initState() {
     super.initState();
     _currentCard = widget.card;
+    _loadDetail();
+  }
+
+  Future<void> _loadDetail() async {
+    final goodsCode = widget.card['goodsCode'] as String?;
+    if (goodsCode == null || goodsCode.isEmpty) return;
+    
+    setState(() {
+      _isLoadingDetail = true;
+    });
+
+    try {
+      final dataService = Provider.of<DataService>(context, listen: false);
+      final detail = await dataService.getGiftCardDetail(goodsCode);
+      
+      if (mounted) {
+        setState(() {
+          _detailData = detail;
+          _isLoadingDetail = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ 상세 정보 로드 오류: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingDetail = false;
+        });
+      }
+    }
   }
 
 
@@ -1040,6 +1279,7 @@ class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
   Widget build(BuildContext context) {
     final card = _currentCard ?? widget.card;
     final goodsName = card['goodsName'] ?? '기프티콘';
+    final goodsImg = card['goodsImg'] as String?;
     // Firestore 데이터를 안전하게 변환
     Map<String, dynamic>? giftCardInfo;
     final giftCardInfoValue = card['giftCardInfo'];
@@ -1134,7 +1374,36 @@ class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 30),
+            
+            // 상품 이미지
+            if (goodsImg != null && goodsImg.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: 350),
+                child: CachedNetworkImage(
+                  imageUrl: goodsImg,
+                  fit: BoxFit.contain,
+                  placeholder: (context, url) => Container(
+                    height: 350,
+                    color: Colors.grey[200],
+                    child: const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                  errorWidget: (context, url, error) => Container(
+                    height: 350,
+                    color: Colors.grey[200],
+                    child: const Icon(
+                      Icons.image_not_supported,
+                      color: Colors.grey,
+                      size: 64,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             
             // 바코드 이미지 (앱에서 자체 생성)
             if (barcode.isNotEmpty)
@@ -1164,53 +1433,6 @@ class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
             
             const SizedBox(height: 30),
             
-            // PIN 번호 (바코드 이미지가 PIN 번호로 생성된 경우에도 PIN 번호 텍스트 표시)
-            if (pinNumber.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'PIN 번호',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      pinNumber,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                    if (barcode.isEmpty && barcodeImageUrl.isEmpty)
-                      // PIN 번호로 바코드를 생성한 경우 안내
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          '(위 바코드는 PIN 번호로 생성되었습니다)',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[600],
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-            
             // 유효기간
             if (expiryDate.isNotEmpty) ...[
               Text(
@@ -1223,31 +1445,49 @@ class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
               const SizedBox(height: 20),
             ],
             
-            // 사용 안내
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '사용 안내',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+            // 상품 설명
+            if ((_detailData?['content'] ?? '').toString().isNotEmpty || 
+                (widget.card['content'] ?? '').toString().isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color.fromARGB(255, 255, 255, 255),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '상품 설명',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    '• 매장에서 바코드를 제시하거나 PIN 번호를 입력하세요\n• 유효기간 내에 사용해주세요',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    Text(
+                      (_detailData?['content'] ?? widget.card['content'] ?? '').toString(),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        height: 1.6,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ] else if (_isLoadingDetail) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color.fromARGB(255, 255, 255, 255),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1285,7 +1525,6 @@ class _BarcodeImage extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
       ),
       child: Column(
         children: [
@@ -1329,34 +1568,6 @@ class _BarcodeImage extends StatelessWidget {
                 ),
               ),
             ),
-          const SizedBox(height: 12),
-          const Text(
-            '바코드 번호',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            barcode,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1,
-            ),
-          ),
-          if (isValid && barcodeData != barcode) ...[
-            const SizedBox(height: 8),
-            Text(
-              '(바코드: $barcodeData)',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
         ],
       ),
     );
