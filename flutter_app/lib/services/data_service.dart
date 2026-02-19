@@ -3294,7 +3294,7 @@ class DataService extends ChangeNotifier {
     );
   }
 
-  // 기프티콘 목록 조회
+  // 기프티콘 목록 조회 및 Firestore에 저장
   Future<List<GiftCard>> getGiftCardList({int start = 1, int size = 20}) async {
     try {
       debugPrint('🔍 기프티콘 목록 조회 시작...');
@@ -3335,7 +3335,17 @@ class DataService extends ChangeNotifier {
           try {
             if (item is Map) {
               final Map<String, dynamic> itemMap = Map<String, dynamic>.from(item);
-              cards.add(fromGiftCardMap(itemMap));
+              final giftCard = fromGiftCardMap(itemMap);
+              cards.add(giftCard);
+              
+              // Firestore에 저장 (goodsCode를 문서 ID로 사용) - 백그라운드로 처리
+              _firestore
+                  .collection('giftcards')
+                  .doc(giftCard.goodsCode)
+                  .set(itemMap, SetOptions(merge: true))
+                  .catchError((e) {
+                    // 에러는 무시 (너무 많은 로그 방지)
+                  });
             } else {
               debugPrint('⚠️ 유효하지 않은 상품 데이터 건너뛰기: $item');
             }
@@ -3344,7 +3354,7 @@ class DataService extends ChangeNotifier {
           }
         }
         
-        debugPrint('✅ 기프티콘 목록 변환 완료: ${cards.length}개');
+        debugPrint('✅ 기프티콘 목록 변환 및 저장 완료: ${cards.length}개');
         return cards;
       } else {
         debugPrint('❌ 기프티콘 목록 조회 실패: ${data['error']}');
@@ -3409,6 +3419,64 @@ class DataService extends ChangeNotifier {
     } catch (e) {
       debugPrint('캐시된 기프티콘 목록 조회 오류: $e');
       return [];
+    }
+  }
+
+  // 전체 기프티콘 데이터를 Firestore에 동기화 (수동 호출 가능)
+  Future<void> syncAllGiftCards({bool force = false}) async {
+    try {
+      debugPrint('🔄 전체 기프티콘 동기화 시작... (force: $force)');
+      
+      // force가 false면 기존 데이터 확인
+      if (!force) {
+        final existingSnapshot = await _firestore
+            .collection('giftcards')
+            .limit(1)
+            .get();
+        
+        if (existingSnapshot.docs.isNotEmpty) {
+          debugPrint('✅ Firestore에 이미 데이터가 있습니다. 동기화를 건너뜁니다.');
+          debugPrint('   강제 동기화를 원하면 force: true 옵션을 사용하세요.');
+          return;
+        }
+      }
+      
+      const totalProducts = 4304;
+      const pageSize = 500;
+      int currentPage = 1;
+      int totalLoaded = 0;
+      
+      debugPrint('📋 전체 $totalProducts개 상품 동기화 시작...');
+      
+      // 페이지네이션으로 전체 상품 가져오기
+      while (totalLoaded < totalProducts) {
+        final remaining = totalProducts - totalLoaded;
+        final size = remaining > pageSize ? pageSize : remaining;
+        
+        debugPrint('📦 페이지 $currentPage 로드 중... (size: $size, 누적: $totalLoaded/$totalProducts)');
+        final cards = await getGiftCardList(start: currentPage, size: size);
+        
+        if (cards.isEmpty) {
+          debugPrint('⚠️ 더 이상 가져올 상품이 없습니다.');
+          break;
+        }
+        
+        totalLoaded += cards.length;
+        debugPrint('✅ 페이지 $currentPage 완료: ${cards.length}개 (누적: $totalLoaded/$totalProducts)');
+        
+        // 마지막 페이지이거나 요청한 개수만큼 가져왔으면 종료
+        if (cards.length < size || totalLoaded >= totalProducts) {
+          break;
+        }
+        
+        currentPage++;
+      }
+      
+      debugPrint('✅ 전체 기프티콘 동기화 완료: 총 $totalLoaded개');
+    } catch (e, stackTrace) {
+      debugPrint('❌ 전체 기프티콘 동기화 오류: $e');
+      debugPrint('📋 스택 트레이스: $stackTrace');
+      rethrow;
     }
   }
 
@@ -3650,7 +3718,12 @@ class DataService extends ChangeNotifier {
           return null;
         }
       } else {
-        debugPrint('❌ 기프티콘 상세 정보 조회 실패: ${data['error']}');
+        // ERR0401은 존재하지 않는 상품코드일 때 발생하는 정상적인 에러이므로 로그 레벨 낮춤
+        if (data['code'] == 'ERR0401') {
+          debugPrint('ℹ️ 상품코드가 존재하지 않거나 조회할 수 없습니다: $goodsCode');
+        } else {
+          debugPrint('❌ 기프티콘 상세 정보 조회 실패: ${data['error']}');
+        }
         return null;
       }
     } catch (e, stackTrace) {
