@@ -1,0 +1,60 @@
+name: art_community
+description: 그림 커뮤니티 앱
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Firebase
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.15.3
+  cloud_firestore: ^4.13.6
+  firebase_storage: ^11.5.6
+  cloud_functions: ^4.6.6
+  
+  # 상태 관리
+  provider: ^6.1.1
+  
+  # UI
+  cupertino_icons: ^1.0.6
+  cached_network_image: ^3.3.0
+  image_picker: ^1.0.7
+  image_cropper: ^5.0.1
+  flutter_image_compress: ^2.1.0
+  
+  # 유틸리티
+  intl: ^0.18.1
+  shared_preferences: ^2.2.2
+  url_launcher: ^6.2.2
+  path_provider: ^2.1.1
+  path: ^1.8.3
+  excel: ^3.0.0
+  share_plus: ^7.2.1
+  
+  # 바코드 생성
+  barcode_widget: ^2.0.4
+  barcode: ^2.2.9
+  
+  # 수익화 (추후 추가)
+  # google_mobile_ads: ^3.1.0
+  # in_app_purchase: ^3.1.11
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
+
+
+
