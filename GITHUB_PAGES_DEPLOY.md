@@ -67,3 +67,6 @@ git remote set-url origin https://github.com/cy moon38/progstudioservice.git
 - 파일 경로가 정확한지 확인하세요
 - GitHub Pages 설정에서 브랜치와 폴더가 올바르게 설정되었는지 확인하세요
 
+
+
+

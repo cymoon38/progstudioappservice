@@ -500,6 +500,280 @@ exports.runDailyLottery = functions.pubsub
       }
     });
 
+// 매일 새벽 3시에 기프트쇼비즈 상품 리스트 동기화 (한국 시간 기준)
+// cron 표현식: 매일 03:00 (한국 시간)
+// runDailyLottery와 동일한 패턴으로 작성
+exports.syncGiftCardsDaily = functions
+    .runWith({
+      timeoutSeconds: 540, // 9분 (Gen1 최대값) - 예상 작업 시간: 약 1-3분 (충분함)
+      memory: '512MB', // 메모리 512MB
+    })
+    .pubsub
+    .schedule('0 3 * * *') // 한국 시간 03:00 (새벽 3시)
+    .timeZone('Asia/Seoul')
+    .onRun(async (context) => {
+      console.log('========================================');
+      console.log('⏰ 매일 새벽 3시 기프트쇼비즈 상품 리스트 동기화 시작');
+      console.log(`📅 실행 시간: ${new Date().toISOString()}`);
+      console.log(`🌏 타임존: Asia/Seoul`);
+      console.log('========================================');
+      
+      try {
+        console.log('📝 Step 1: 동기화 상태를 "syncing"으로 설정 시작...');
+        // 동기화 상태를 "syncing"으로 설정
+        await db.collection('syncStatus').doc('giftcards').set({
+          status: 'syncing',
+          startedAt: admin.firestore.FieldValue.serverTimestamp(),
+          message: '상품 업데이트중...',
+        });
+        console.log('✅ Step 1 완료: 동기화 상태를 "syncing"으로 설정');
+        
+        console.log('📝 Step 2: API 인증 정보 가져오기 시작...');
+        const authCode = getSecret('GIFTSHOWBIZ_AUTH_CODE');
+        const authToken = getSecret('GIFTSHOWBIZ_AUTH_TOKEN');
+        
+        if (!authCode || !authToken) {
+          console.error('❌ Step 2 실패: API 인증 정보를 가져올 수 없습니다.');
+          console.error(`   - authCode 존재: ${!!authCode}`);
+          console.error(`   - authToken 존재: ${!!authToken}`);
+          // 오류 발생 시 상태를 "idle"로 변경
+          await db.collection('syncStatus').doc('giftcards').set({
+            status: 'idle',
+            lastError: 'API 인증 정보를 가져올 수 없습니다.',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          throw new Error('API 인증 정보를 가져올 수 없습니다.');
+        }
+        console.log('✅ Step 2 완료: API 인증 정보 가져오기 성공');
+        
+        console.log('📝 Step 3: 상품 동기화 변수 초기화...');
+        const totalProducts = 4304; // 전체 상품 개수
+        const pageSize = 500; // 한 번에 가져올 상품 개수
+        let currentPage = 1;
+        let totalLoaded = 0;
+        let totalUpdated = 0;
+        const apiGoodsCodes = new Set(); // API에서 받아온 상품 코드 목록
+        
+        console.log(`✅ Step 3 완료: 변수 초기화`);
+        console.log(`📦 Step 4: 전체 상품 동기화 시작 (예상 개수: ${totalProducts}개, 페이지 크기: ${pageSize}개)`);
+        
+        // 페이지네이션으로 전체 상품 가져오기
+        while (totalLoaded < totalProducts) {
+          const remaining = totalProducts - totalLoaded;
+          const size = remaining > pageSize ? pageSize : remaining;
+          
+          console.log(`📦 페이지 ${currentPage} 로드 중... (size: ${size}, 누적: ${totalLoaded}/${totalProducts})`);
+          
+          console.log(`   📡 API 호출 중... (page: ${currentPage}, size: ${size})`);
+          const result = await getGiftCardList(currentPage, size, authCode, authToken);
+          console.log(`   📡 API 응답 받음: success=${result.success}, goodsList.length=${result.goodsList?.length || 0}`);
+          
+          if (!result.success || !result.goodsList || result.goodsList.length === 0) {
+            console.warn(`⚠️ 페이지 ${currentPage}에서 더 이상 가져올 상품이 없습니다.`);
+            console.warn(`   - result.success: ${result.success}`);
+            console.warn(`   - result.goodsList 존재: ${!!result.goodsList}`);
+            console.warn(`   - result.goodsList.length: ${result.goodsList?.length || 0}`);
+            break;
+          }
+          
+          const goodsList = result.goodsList;
+          totalLoaded += goodsList.length;
+          console.log(`✅ 페이지 ${currentPage} 완료: ${goodsList.length}개 (누적: ${totalLoaded}/${totalProducts})`);
+          
+          // Firestore에 저장/업데이트
+          try {
+            const batch = db.batch();
+            let batchCount = 0;
+            
+            for (let i = 0; i < goodsList.length; i++) {
+              const goods = goodsList[i];
+              
+              // goods 객체가 유효한지 확인
+              if (!goods || !goods.goodsCode) {
+                console.warn(`⚠️ 유효하지 않은 상품 데이터 건너뛰기: ${JSON.stringify(goods)}`);
+                continue;
+              }
+              
+              const goodsCode = String(goods.goodsCode);
+              apiGoodsCodes.add(goodsCode); // API에서 받아온 상품 코드 추가
+              
+              const docRef = db.collection('giftcards').doc(goodsCode);
+              
+              // 이미지 URL 우선순위: goodsimg > mmsGoodsimg > goodsImgS > goodsImgB
+              const imageUrl = goods.goodsimg || 
+                              goods.mmsGoodsimg || 
+                              goods.goodsImgS || 
+                              goods.goodsImgB ||
+                              goods.goodsImg ||
+                              goods.image ||
+                              goods.img ||
+                              '';
+              
+              // 카테고리명 추출 (우선순위: categoryName1 > category1Name > categoryName > goodsTypeNm)
+              const categoryName = goods.categoryName1 || 
+                                  goods.category1Name || 
+                                  goods.categoryName || 
+                                  goods.goodsTypeNm || 
+                                  '';
+              
+              batch.set(
+                docRef,
+                {
+                  goodsCode: String(goods.goodsCode),
+                  goodsName: String(goods.goodsName || ''),
+                  salePrice: Number(goods.salePrice) || 0,
+                  discountPrice: Number(goods.discountPrice) || 0,
+                  goodsimg: String(imageUrl),
+                  mmsGoodsimg: String(goods.mmsGoodsimg || ''),
+                  goodsImgS: String(goods.goodsImgS || ''),
+                  goodsImgB: String(goods.goodsImgB || ''),
+                  goodsImg: String(goods.goodsImg || ''),
+                  image: String(goods.image || ''),
+                  img: String(goods.img || ''),
+                  brandName: String(goods.brandName || ''),
+                  goodsTypeNm: String(goods.goodsTypeNm || ''),
+                  categoryName1: String(categoryName),
+                  category1Name: String(goods.category1Name || ''),
+                  categoryName: String(goods.categoryName || ''),
+                  lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+              );
+              batchCount++;
+              totalUpdated++;
+              
+              // 500개마다 배치 커밋
+              if (batchCount >= 500) {
+                await batch.commit();
+                console.log(`✅ Firestore 업데이트 완료: ${batchCount}개`);
+                batchCount = 0;
+              }
+            }
+            
+            // 남은 배치 커밋
+            if (batchCount > 0) {
+              await batch.commit();
+              console.log(`✅ Firestore 업데이트 완료: ${batchCount}개`);
+            }
+            
+            console.log(`✅ 페이지 ${currentPage} Firestore 저장 완료: ${goodsList.length}개`);
+          } catch (firestoreError) {
+            console.error(`❌ 페이지 ${currentPage} Firestore 저장 오류:`, firestoreError);
+            // Firestore 오류가 발생해도 다음 페이지 계속 진행
+          }
+          
+          // 마지막 페이지이거나 요청한 개수만큼 가져왔으면 종료
+          if (goodsList.length < size || totalLoaded >= totalProducts) {
+            break;
+          }
+          
+          currentPage++;
+          
+          // API 호출 제한을 고려하여 약간의 지연 추가 (선택사항)
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1초 대기
+        }
+        
+        console.log('========================================');
+        console.log(`✅ Step 4 완료: 전체 상품 동기화 완료`);
+        console.log(`   - 총 로드: ${totalLoaded}개`);
+        console.log(`   - 총 업데이트: ${totalUpdated}개`);
+        console.log(`   - API 상품 코드 수: ${apiGoodsCodes.size}개`);
+        console.log('========================================');
+        
+        // API 응답에 없는 기존 문서 삭제
+        console.log('📝 Step 5: API 응답에 없는 기존 문서 삭제 시작...');
+        try {
+          const allDocsSnapshot = await db.collection('giftcards').get();
+          const allDocs = allDocsSnapshot.docs;
+          let deletedCount = 0;
+          
+          console.log(`📊 Firestore에 있는 문서 수: ${allDocs.length}개`);
+          console.log(`📊 API에서 받아온 상품 코드 수: ${apiGoodsCodes.size}개`);
+          
+          const deleteBatch = db.batch();
+          let deleteBatchCount = 0;
+          
+          for (const doc of allDocs) {
+            const docGoodsCode = doc.id;
+            if (!apiGoodsCodes.has(docGoodsCode)) {
+              // API 응답에 없는 문서 삭제
+              deleteBatch.delete(doc.ref);
+              deleteBatchCount++;
+              deletedCount++;
+              
+              // 500개마다 배치 커밋
+              if (deleteBatchCount >= 500) {
+                await deleteBatch.commit();
+                console.log(`✅ 삭제 배치 커밋: ${deleteBatchCount}개`);
+                deleteBatchCount = 0;
+              }
+            }
+          }
+          
+          // 남은 배치 커밋
+          if (deleteBatchCount > 0) {
+            await deleteBatch.commit();
+            console.log(`✅ 삭제 배치 커밋: ${deleteBatchCount}개`);
+          }
+          
+          console.log(`✅ Step 5 완료: API 응답에 없는 문서 삭제 완료: 총 ${deletedCount}개 삭제`);
+        } catch (deleteError) {
+          console.error(`❌ Step 5 실패: 문서 삭제 오류: ${deleteError}`);
+          console.error(`   - 오류 메시지: ${deleteError.message}`);
+          console.error(`   - 오류 스택: ${deleteError.stack}`);
+          // 삭제 오류가 발생해도 동기화는 완료된 것으로 처리
+        }
+        
+        // 동기화 완료 시 상태를 "idle"로 변경
+        console.log('📝 Step 6: 동기화 상태를 "idle"로 변경 시작...');
+        await db.collection('syncStatus').doc('giftcards').set({
+          status: 'idle',
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          totalLoaded: totalLoaded,
+          totalUpdated: totalUpdated,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log('✅ Step 6 완료: 동기화 상태를 "idle"로 변경');
+        
+        console.log('========================================');
+        console.log('🎉 동기화 완료!');
+        console.log(`   - 총 로드: ${totalLoaded}개`);
+        console.log(`   - 총 업데이트: ${totalUpdated}개`);
+        console.log('========================================');
+        
+        return {
+          success: true,
+          totalLoaded: totalLoaded,
+          totalUpdated: totalUpdated,
+        };
+      } catch (e) {
+        console.error('========================================');
+        console.error('❌ 기프트쇼비즈 상품 리스트 동기화 오류 발생!');
+        console.error(`❌ 오류 타입: ${e.constructor.name}`);
+        console.error(`❌ 오류 메시지: ${e.message}`);
+        console.error(`❌ 오류 스택: ${e.stack}`);
+        console.error('========================================');
+        
+        // 오류 발생 시 상태를 "idle"로 변경
+        try {
+          console.log('📝 오류 상태를 Firestore에 저장 중...');
+          await db.collection('syncStatus').doc('giftcards').set({
+            status: 'idle',
+            lastError: e.message || '알 수 없는 오류',
+            errorStack: e.stack || '',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          console.log('✅ 오류 상태 저장 완료');
+        } catch (statusError) {
+          console.error(`❌ 상태 저장 오류: ${statusError.message}`);
+          console.error(`❌ 상태 저장 오류 스택: ${statusError.stack}`);
+          console.error(`❌ 동기화 상태 업데이트 오류: ${statusError}`);
+        }
+        
+        throw e;
+      }
+    });
+
 // =========================
 // 기프트쇼비즈 API 연동
 // =========================
@@ -1536,135 +1810,10 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
         }
       }
       
-      // 2차: tr_id로 쿠폰 상세 정보 조회 (바코드 정보 가져오기)
-      if (!giftCardInfo || (!giftCardInfo.barcode && !giftCardInfo.barcodeImage)) {
-        try {
-          const couponDetailUrl = `${GIFTSHOWBIZ_BASE_URL}/coupons`;
-          const couponDetailFormData = new URLSearchParams();
-          couponDetailFormData.append('api_code', '0201'); // 쿠폰 상세 정보 API
-          couponDetailFormData.append('custom_auth_code', authCode.trim());
-          couponDetailFormData.append('custom_auth_token', authToken.trim());
-          couponDetailFormData.append('dev_yn', 'N');
-          couponDetailFormData.append('tr_id', trId);
-          
-          console.log('📞 쿠폰 상세 정보 조회 API 호출 (바코드 정보 가져오기):', { 
-            tr_id: trId,
-            url: couponDetailUrl,
-            formData: couponDetailFormData.toString(),
-          });
-          
-          const couponDetailResponse = await axios.post(
-            couponDetailUrl,
-            couponDetailFormData.toString(),
-            {
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-              },
-              timeout: 30000,
-            }
-          );
-          
-          console.log('═══════════════════════════════════════');
-          console.log('📥 쿠폰 상세 정보 조회 API 응답:');
-          console.log('   status:', couponDetailResponse.status);
-          console.log('   code:', couponDetailResponse.data?.code);
-          console.log('   message:', couponDetailResponse.data?.message);
-          console.log('   전체 응답 키:', couponDetailResponse.data ? Object.keys(couponDetailResponse.data) : []);
-          console.log('   전체 응답:', JSON.stringify(couponDetailResponse.data, null, 2));
-          console.log('═══════════════════════════════════════');
-          
-          // 응답 코드가 '0000'이 아니면 오류 로깅
-          if (couponDetailResponse.data && couponDetailResponse.data.code !== '0000') {
-            console.error('❌ 쿠폰 상세 정보 조회 API 오류:', {
-              code: couponDetailResponse.data.code,
-              message: couponDetailResponse.data.message,
-              전체응답: JSON.stringify(couponDetailResponse.data, null, 2),
-            });
-          }
-          
-          if (couponDetailResponse.data && couponDetailResponse.data.code === '0000') {
-            // 쿠폰 상세 정보는 result.result 구조일 수 있음 (API 규격서 참고)
-            const responseData = couponDetailResponse.data;
-            
-            // API 규격서 구조 확인: response.data.result.result
-            let detailInfo = null;
-            if (responseData.result && responseData.result.result) {
-              detailInfo = responseData.result.result;
-              console.log('✅ API 규격서 구조 발견: result.result');
-            } else {
-              // 기존 방식 (하위 호환성)
-              detailInfo = responseData.result || 
-                          responseData.couponDetail || 
-                          responseData.coupon ||
-                          responseData.data ||
-                          responseData;
-            }
-            
-            console.log('═══════════════════════════════════════');
-            console.log('✅ 쿠폰 상세 정보 조회 성공:');
-            console.log('   responseData.result:', !!responseData.result);
-            console.log('   responseData.result.result:', !!responseData.result?.result);
-            console.log('   responseData.couponDetail:', !!responseData.couponDetail);
-            console.log('   responseData.coupon:', !!responseData.coupon);
-            console.log('   responseData.data:', !!responseData.data);
-            console.log('   detailInfo 타입:', typeof detailInfo);
-            console.log('   detailInfo 배열 여부:', Array.isArray(detailInfo));
-            if (detailInfo && typeof detailInfo === 'object') {
-              console.log('   detailInfo 키:', Object.keys(detailInfo));
-            }
-            console.log('   detailInfo 전체:', JSON.stringify(detailInfo, null, 2));
-            console.log('═══════════════════════════════════════');
-            
-            // detailInfo가 배열인 경우 첫 번째 요소 사용
-            if (Array.isArray(detailInfo) && detailInfo.length > 0) {
-              console.log('⚠️ detailInfo가 배열입니다. 첫 번째 요소를 사용합니다.');
-              giftCardInfo = detailInfo[0];
-            } else if (typeof detailInfo === 'object' && detailInfo !== null) {
-              giftCardInfo = detailInfo;
-              
-              // API 규격서 필드명 매핑 (pinNo → pinNumber, couponImgUrl → barcodeImage)
-              if (giftCardInfo.pinNo && !giftCardInfo.pinNumber) {
-                giftCardInfo.pinNumber = giftCardInfo.pinNo;
-              }
-              if (giftCardInfo.couponImgUrl && !giftCardInfo.barcodeImage) {
-                giftCardInfo.barcodeImage = giftCardInfo.couponImgUrl;
-              }
-              if (giftCardInfo.pinNo && !giftCardInfo.barcode) {
-                giftCardInfo.barcode = giftCardInfo.pinNo;
-              }
-              
-              // 바코드 정보가 있는지 확인
-              console.log('🔍 detailInfo에서 바코드 정보 확인:');
-              console.log('   모든 키:', Object.keys(giftCardInfo));
-              console.log('   barcode 관련 필드:', {
-                barcode: giftCardInfo.barcode,
-                barcodeNumber: giftCardInfo.barcodeNumber,
-                barcode_no: giftCardInfo.barcode_no,
-                pinNo: giftCardInfo.pinNo,
-                barcodeImage: giftCardInfo.barcodeImage,
-                barcodeImageUrl: giftCardInfo.barcodeImageUrl,
-                barcode_img: giftCardInfo.barcode_img,
-                barcode_image: giftCardInfo.barcode_image,
-                couponImgUrl: giftCardInfo.couponImgUrl,
-              });
-              console.log('   pin 관련 필드:', {
-                pinNumber: giftCardInfo.pinNumber,
-                pin: giftCardInfo.pin,
-                pin_no: giftCardInfo.pin_no,
-                pinNo: giftCardInfo.pinNo,
-              });
-            } else {
-              console.warn('⚠️ detailInfo가 유효한 객체가 아닙니다.');
-              giftCardInfo = null;
-            }
-          } else {
-            console.warn('⚠️ 쿠폰 상세 정보 조회 실패:', couponDetailResponse.data);
-          }
-        } catch (couponError) {
-          console.error('❌ 쿠폰 상세 정보 조회 오류:', couponError.message);
-          // 쿠폰 상세 정보 조회 실패해도 구매는 성공한 것으로 처리
-        }
-      }
+      // 구매 시에는 API 0201을 호출하지 않음
+      // PIN 상태 정보는 기본값(pinStatusCd: '01', pinStatusNm: '발행')으로 저장
+      // 이후 refreshGiftCardBarcode 함수에서 API 0201을 호출하여 상태 정보만 업데이트
+      console.log('ℹ️ 구매 시 API 0201 호출 생략 - PIN 상태는 기본값(01, 발행)으로 저장');
       
       // 바코드 정보 정리 (다양한 필드명 지원)
       // "발행" 같은 상태 메시지는 실제 바코드/PIN 번호가 아니므로 제외
@@ -1673,8 +1822,10 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
         const trimmed = value.trim();
         // 빈 문자열이거나 "발행" 같은 상태 메시지 제외
         if (trimmed === '' || trimmed === '발행' || trimmed === '발행됨' || trimmed === 'issued') return false;
-        // 숫자와 영문으로만 구성된 값만 유효한 바코드/PIN으로 인식
-        return /^[0-9A-Za-z]+$/.test(trimmed) && trimmed.length >= 3;
+        // 하이픈, 공백 등을 제거한 후 숫자와 영문으로만 구성된 값인지 확인
+        const cleaned = trimmed.replace(/[^0-9A-Za-z]/g, '');
+        // 숫자와 영문이 포함되어 있고 최소 3자 이상이면 유효한 바코드/PIN으로 인식
+        return /^[0-9A-Za-z]+$/.test(cleaned) && cleaned.length >= 3;
       }
       
       if (giftCardInfo) {
@@ -1708,8 +1859,14 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
         for (const candidate of pinCandidates) {
           if (isValidBarcodeOrPin(candidate)) {
             pinNumber = String(candidate).trim();
+            console.log('✅ PIN 번호 추출 성공:', pinNumber);
             break;
           }
+        }
+        
+        // PIN 번호가 없으면 경고
+        if (!pinNumber) {
+          console.warn('⚠️ PIN 번호를 찾을 수 없습니다. 후보 값들:', pinCandidates);
         }
         
         // 바코드 이미지 URL 추출
@@ -1721,6 +1878,18 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
                             giftCardInfo.couponImgUrl || // API 규격서 필드명
                             '';
         
+        // 구매 시 PIN 상태 정보는 기본값으로 설정
+        // API 0201에서는 PIN 번호가 나오지 않으므로, 구매 시에는 기본 상태로 저장
+        // 이후 refreshGiftCardBarcode에서 API 0201 호출 시 상태 정보만 업데이트
+        const pinStatusCd = '01'; // 기본값: 발행
+        const pinStatusNm = '발행'; // 기본값: 발행
+        
+        console.log('📊 PIN 상태 정보 설정 (구매 시 기본값):', {
+          pinStatusCd: pinStatusCd,
+          pinStatusNm: pinStatusNm,
+          note: '구매 시 기본 상태로 저장, 이후 API 0201 호출 시 업데이트',
+        });
+        
         const barcodeInfo = {
           barcode: barcode,
           barcodeImage: barcodeImage,
@@ -1728,6 +1897,8 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
           expiryDate: giftCardInfo.expiryDate || giftCardInfo.expireDate || giftCardInfo.expiry_date || giftCardInfo.expire_date || '',
           trId: trId,
           orderNo: giftCardInfo.orderNo || '', // API 규격서: orderNo도 저장
+          pinStatusCd: pinStatusCd, // PIN 상태 코드 추가
+          pinStatusNm: pinStatusNm, // PIN 상태 이름 추가
         };
         
         console.log('✅ 바코드 정보 추출 완료:', {
@@ -1739,7 +1910,10 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
           barcodeImage: barcodeInfo.barcodeImage ? `${barcodeInfo.barcodeImage.substring(0, 50)}...` : '(없음)',
           pinNumber: barcodeInfo.pinNumber || '(없음)',
           expiryDate: barcodeInfo.expiryDate || '(없음)',
+          pinStatusCd: barcodeInfo.pinStatusCd || '(없음)',
+          pinStatusNm: barcodeInfo.pinStatusNm || '(없음)',
         });
+        console.log('📦 저장될 barcodeInfo 전체:', JSON.stringify(barcodeInfo, null, 2));
         
         // 원본 giftCardInfo에 바코드 정보가 없으면 원본 데이터의 모든 필드를 확인
         if (!barcodeInfo.barcode && !barcodeInfo.barcodeImage && !barcodeInfo.pinNumber) {
@@ -1807,9 +1981,25 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
             barcodeInfo.barcode = barcodeInfo.pinNumber;
           }
           
-          giftCardInfo = barcodeInfo;
+          // barcodeInfo를 giftCardInfo에 할당 (모든 필드 포함)
+          giftCardInfo = { ...barcodeInfo };
+          console.log('✅ giftCardInfo에 barcodeInfo 할당 완료 (검색 후):', {
+            pinNumber: giftCardInfo.pinNumber,
+            pinStatusCd: giftCardInfo.pinStatusCd,
+            pinStatusNm: giftCardInfo.pinStatusNm,
+            barcode: giftCardInfo.barcode,
+            barcodeImage: giftCardInfo.barcodeImage,
+          });
         } else {
-          giftCardInfo = barcodeInfo;
+          // barcodeInfo를 giftCardInfo에 할당 (모든 필드 포함)
+          giftCardInfo = { ...barcodeInfo };
+          console.log('✅ giftCardInfo에 barcodeInfo 할당 완료 (else):', {
+            pinNumber: giftCardInfo.pinNumber,
+            pinStatusCd: giftCardInfo.pinStatusCd,
+            pinStatusNm: giftCardInfo.pinStatusNm,
+            barcode: giftCardInfo.barcode,
+            barcodeImage: giftCardInfo.barcodeImage,
+          });
         }
       } else {
         console.warn('⚠️ 바코드 정보를 찾을 수 없습니다. tr_id만 저장합니다.');
@@ -1859,6 +2049,17 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
 
       // 보유 기프티콘에 추가 (바코드 정보가 있을 때만)
       if (hasValidBarcodeInfo && giftCardInfo) {
+        // 저장 직전에 giftCardInfo 확인
+        console.log('🔍 저장 직전 giftCardInfo 확인:');
+        console.log('   giftCardInfo 타입:', typeof giftCardInfo);
+        console.log('   giftCardInfo 키:', Object.keys(giftCardInfo));
+        console.log('   giftCardInfo 전체:', JSON.stringify(giftCardInfo, null, 2));
+        console.log('   barcode:', giftCardInfo.barcode);
+        console.log('   pinNumber:', giftCardInfo.pinNumber);
+        console.log('   barcodeImage:', giftCardInfo.barcodeImage);
+        console.log('   pinStatusCd:', giftCardInfo.pinStatusCd);
+        console.log('   pinStatusNm:', giftCardInfo.pinStatusNm);
+        
         const ownedGiftCardData = {
           userId,
           goodsCode: goodsCodeStr,
@@ -1869,7 +2070,7 @@ exports.purchaseGiftCard = functions.https.onCall(async (data, context) => {
           giftCardInfo: giftCardInfo,
           status: 'active',
         };
-        console.log('💾 보유 기프티콘 저장:', ownedGiftCardData);
+        console.log('💾 보유 기프티콘 저장:', JSON.stringify(ownedGiftCardData, null, 2));
         await admin.firestore().collection('ownedGiftCards').add(ownedGiftCardData);
         console.log('✅ 보유 기프티콘 저장 완료');
       } else {
@@ -2159,36 +2360,54 @@ exports.refreshGiftCardBarcode = functions.https.onCall(async (data, context) =>
                             giftCardInfo.couponImgUrl ||
                             '';
 
-        const barcodeInfo = {
-          barcode: barcode,
-          barcodeImage: barcodeImage,
-          pinNumber: pinNumber,
-          expiryDate: giftCardInfo.expiryDate || giftCardInfo.expireDate || giftCardInfo.expiry_date || giftCardInfo.expire_date || '',
-          trId: trId,
-          orderNo: giftCardInfo.orderNo || '',
-        };
+        // pinStatusCd와 pinStatusNm 추출 (API 응답에서)
+        // API 0201에서는 PIN 번호가 나오지 않으므로 상태 정보만 추출
+        const pinStatusCd = giftCardInfo.pinStatusCd || 
+                           giftCardInfo.pin_status_cd || 
+                           giftCardInfo.pin_status_code ||
+                           giftCardInfo.statusCd ||
+                           '';
+        const pinStatusNm = giftCardInfo.pinStatusNm || 
+                           giftCardInfo.pin_status_nm || 
+                           giftCardInfo.pin_status_name ||
+                           giftCardInfo.statusNm ||
+                           '';
+        
+        console.log('📊 PIN 상태 정보 추출 (API 0201):', {
+          pinStatusCd: pinStatusCd || '(없음)',
+          pinStatusNm: pinStatusNm || '(없음)',
+          note: 'PIN 번호는 업데이트하지 않고 상태 정보만 업데이트',
+        });
 
-        // PIN 번호만 있는 경우, PIN 번호를 바코드 번호로 사용
-        if (!barcodeInfo.barcode && !barcodeInfo.barcodeImage && barcodeInfo.pinNumber) {
-          barcodeInfo.barcode = barcodeInfo.pinNumber;
-        }
+        // 기존 giftCardInfo 가져오기 (PIN 번호 보존)
+        const existingOwnedCard = ownedCardData.giftCardInfo || {};
+        console.log('📦 기존 giftCardInfo:', {
+          pinNumber: existingOwnedCard.pinNumber || '(없음)',
+          pinStatusCd: existingOwnedCard.pinStatusCd || '(없음)',
+          pinStatusNm: existingOwnedCard.pinStatusNm || '(없음)',
+        });
 
-        // 보유 기프티콘 업데이트
-        const ownedCardsQuery = await admin.firestore()
-          .collection('ownedGiftCards')
-          .where('userId', '==', userId)
-          .where('trId', '==', trId)
-          .limit(1)
-          .get();
+        // 업데이트할 pinStatusCd와 pinStatusNm 결정
+        // API에서 추출한 값이 있으면 사용, 없으면 기존 값 유지, 둘 다 없으면 기본값
+        const updatedPinStatusCd = pinStatusCd || existingOwnedCard.pinStatusCd || '01';
+        const updatedPinStatusNm = pinStatusNm || existingOwnedCard.pinStatusNm || '발행';
 
-        if (!ownedCardsQuery.empty) {
-          const ownedCardRef = ownedCardsQuery.docs[0].ref;
-          await ownedCardRef.update({
-            giftCardInfo: barcodeInfo,
-            lastRefreshed: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          console.log('✅ 보유 기프티콘 바코드 정보 업데이트 완료');
-        }
+        console.log('📦 업데이트될 PIN 상태 정보:', {
+          기존_pinNumber: existingOwnedCard.pinNumber || '(없음)',
+          기존_pinStatusCd: existingOwnedCard.pinStatusCd || '(없음)',
+          기존_pinStatusNm: existingOwnedCard.pinStatusNm || '(없음)',
+          업데이트_pinStatusCd: updatedPinStatusCd,
+          업데이트_pinStatusNm: updatedPinStatusNm,
+          note: 'PIN 번호는 기존 값 유지, 상태 정보만 업데이트',
+        });
+
+        // 보유 기프티콘 업데이트 (pinStatusCd와 pinStatusNm만)
+        await ownedCardDoc.ref.update({
+          'giftCardInfo.pinStatusCd': updatedPinStatusCd,
+          'giftCardInfo.pinStatusNm': updatedPinStatusNm,
+          'giftCardInfo.lastRefreshed': admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log('✅ 보유 기프티콘 PIN 상태 정보 업데이트 완료 (pinStatusCd, pinStatusNm만)');
 
         // 구매 내역도 업데이트
         const purchasesQuery = await admin.firestore()
@@ -2201,16 +2420,24 @@ exports.refreshGiftCardBarcode = functions.https.onCall(async (data, context) =>
         if (!purchasesQuery.empty) {
           const purchaseRef = purchasesQuery.docs[0].ref;
           await purchaseRef.update({
-            giftCardInfo: barcodeInfo,
-            lastRefreshed: admin.firestore.FieldValue.serverTimestamp(),
+            'giftCardInfo.pinStatusCd': updatedPinStatusCd,
+            'giftCardInfo.pinStatusNm': updatedPinStatusNm,
+            'giftCardInfo.lastRefreshed': admin.firestore.FieldValue.serverTimestamp(),
           });
-          console.log('✅ 구매 내역 바코드 정보 업데이트 완료');
+          console.log('✅ 구매 내역 PIN 상태 정보 업데이트 완료 (pinStatusCd, pinStatusNm만)');
         }
+
+        // 반환할 giftCardInfo 생성 (기존 정보 유지 + 업데이트된 상태 정보)
+        const updatedGiftCardInfo = {
+          ...existingOwnedCard,
+          pinStatusCd: updatedPinStatusCd,
+          pinStatusNm: updatedPinStatusNm,
+        };
 
         return {
           success: true,
-          message: '바코드 정보를 성공적으로 조회했습니다.',
-          giftCardInfo: barcodeInfo,
+          message: 'PIN 상태 정보를 성공적으로 업데이트했습니다.',
+          giftCardInfo: updatedGiftCardInfo,
         };
       } else {
         throw new functions.https.HttpsError('not-found', '쿠폰 정보를 찾을 수 없습니다.');

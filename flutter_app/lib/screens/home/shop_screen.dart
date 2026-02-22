@@ -105,9 +105,12 @@ class _ShopScreenState extends State<ShopScreen> {
                           searchController: state?._searchController,
                           searchQuery: state?._searchQuery ?? '',
                           onSearchChanged: (value) {
-                            state?._debounceSearch(value);
+                            // 검색어 입력 시에는 검색하지 않음 (비용 절감)
+                            // 돋보기 버튼 클릭 시에만 검색 실행
+                            // state?._debounceSearch(value); // 제거: 실시간 검색 비활성화
                           },
                           onSearchSubmitted: (value) {
+                            // 엔터 키 입력 시에도 검색 실행 (사용자 편의성)
                             state?._performSearch(value);
                           },
                           onSearchClear: () {
@@ -414,13 +417,13 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
   
   // 카테고리별 상품코드 매핑 (각 카테고리별로 표시할 상품코드 목록)
   final Map<String, List<String>> _categoryGoodsCodes = {
-    '커피/음료': ['G00003320982','G00003320982','G00003320983','G00003320985','G00003381084','G00003320984','G00003320992','G00002401526','G00003320986','G00003320987','G00003320988','G00002401526','G00002401537','G00002401542','G00003401079','G00003411061','G00004771059','G00002861259','G00003660932','G00003421395','G00001621761','G00001642212','G00001642210','G00004790938','G00004781056'], // 여기에 상품코드 목록을 추가하세요
+    '커피/음료': ['G00003311076','G00003321051','G00003320983','G00003320985','G00003381084','G00003320984','G00003320992','G00002401526','G00003320986','G00003320987','G00003320988','G00002401526','G00002401537','G00002401542','G00003401079','G00003411061','G00004771059','G00002861259','G00003660932','G00003421395','G00001621761','G00001642212','G00001642210','G00004790938','G00004781056'], // 여기에 상품코드 목록을 추가하세요
     '베이커리/도넛': ['G00002281136','G00003401037','G00004061012','G00004600937','G00000211032','G00000183421','G00000183546','G00003411019','G00004031068','G00004521060','G00004461058','G00004461029','G00004451208','G00003383351','G00001380787','G00004261067','G00004181050','G00003531021','G00001401113','G00001411118'], // 여기에 상품코드 목록을 추가하세요
     '아이스크림': ['G00002101010','G00003181012','G00002081235','G00002101050','G00002101048','G00002100985','G00002101052','G00004521065','G00004451222','G00002090930','G00004820955','G00004261089','G00000183392','G00001961020','G00000221120','G00000220610'], // 여기에 상품코드 목록을 추가하세요
     '편의점': ['G00004261473','G00004291585','G00000970725','G00000970724','G00000750718','G00000750719','G00001460945','G00003261295','G00004291200','G00001470935','G00001700935','G00001561375','G00001751640','G00004291195','G00003271513','G00003401026','G00004061147','G00004061145','G00004061148','G00004291214','G00004261490','G00005001013','G00005001011','G00003271514'], // 여기에 상품코드 목록을 추가하세요
     '피자/버거/치킨': ['G00004661005','G00002971421','G00002971422','G00004701493','G00005150928','G00005122385','G00005150933','G00003151420','G00003151421','G00003491299','G00003151424','G00005101024','G00003151429','G00003900948','G00004680954','G00003890969','G00003900950','G00003900947','G00003900944','G00003890952','G00003900941','G00003890945','G00003511060','G00003530999','G00003530994','G00003530980','G00003511071','G00003431681','G00003002383','G00003011837'], // 여기에 상품코드 목록을 추가하세요
     '영화/음악/독서': ['G00004220933','G00003061244','G00005190931','G00001441070','G00004220939','G00005200929','G00004220934','G00003061245','G00004220935','G00005200928','G00004220936','G00004441004','G00004220937','G00004220938','G00000182630''G00000200518','G00000610800','G00001680961'], // 여기에 상품코드 목록을 추가하세요
-    '상품권/마트/페이': ['G00001981038','G00001981040','G00001981041','G00001971091','G00001971090','G00001981037','G00003101028','G00003111013','G00003101029','G00003101030','G00004320962','G00004320960','G00005101048','G00005101026'
+    '상품권/마트/페이': ['G00001305415','G00005261004','G00000760670','G00000760671','G00001401607','G00000760672','G00004031412','G00004031411','G00001720988','G00001720986','G00001720987','G00001720985'
 
 ], // 여기에 상품코드 목록을 추가하세요
   };
@@ -433,6 +436,7 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
   bool _isSyncing = false; // 동기화 중인지 확인
   static bool _hasCheckedSync = false; // 앱 전체에서 한 번만 확인
   String? _loadingCategory; // 현재 로딩 중인 카테고리 (경쟁 조건 방지)
+  StreamSubscription? _syncStatusSubscription; // 동기화 상태 구독
   
   // 메모리 캐시: 카테고리별로 로드한 데이터 저장 (앱 실행 중 유지)
   static final Map<String, List<GiftCard>> _categoryCache = {};
@@ -442,6 +446,31 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
     super.initState();
     _selectedCategory = widget.initialCategory; // 부모로부터 받은 초기 카테고리 사용
     _loadGiftCards();
+    _listenToSyncStatus(); // 동기화 상태 실시간 감지
+  }
+  
+  
+  // 동기화 상태 실시간 감지
+  void _listenToSyncStatus() {
+    _syncStatusSubscription = FirebaseFirestore.instance
+        .collection('syncStatus')
+        .doc('giftcards')
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists) {
+        final data = snapshot.data();
+        final status = data?['status'] as String?;
+        final isSyncing = status == 'syncing';
+        
+        if (mounted) {
+          setState(() {
+            _isSyncing = isSyncing;
+          });
+        }
+      }
+    }, onError: (error) {
+      debugPrint('⚠️ 동기화 상태 감지 오류: $error');
+    });
   }
   
   // 외부에서 카테고리 변경을 요청할 때 사용
@@ -533,39 +562,80 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
     try {
       debugPrint('🔍 상품 검색 시작: "$query"');
       
-      // Firestore에서 모든 상품 가져오기 (검색을 위해)
-      // 실제로는 더 효율적인 방법을 사용할 수 있지만, 간단하게 구현
-      final snapshot = await FirebaseFirestore.instance
-          .collection('giftcards')
-          .limit(500) // 검색을 위해 최대 500개 가져오기
-          .get();
+      // ⚠️ 중요: Firestore 읽기 비용은 실제로 읽은 문서 수에 따라 결정됩니다
+      // 비용 최적화: 처음 500개만 읽고, 검색 결과가 10개 미만이면 500개씩 더 읽기
+      const int initialLimit = 500;
+      const int batchSize = 500;
+      const int maxReads = 2000; // 최대 2000개까지만 읽기
       
       final List<GiftCard> searchResults = [];
       final queryLower = query.toLowerCase();
+      int totalReads = 0;
+      int currentLimit = initialLimit;
+      Set<String> processedDocIds = {}; // 이미 처리한 문서 ID 추적
       
-      for (final doc in snapshot.docs) {
-        try {
-          final data = doc.data();
-          final goodsName = (data['goodsName'] ?? '').toString().toLowerCase();
-          final brandName = (data['brandName'] ?? '').toString().toLowerCase();
-          final categoryName1 = (data['categoryName1'] ?? 
-                                 data['category1Name'] ?? 
-                                 data['categoryName'] ?? 
-                                 data['goodsTypeNm'] ?? '').toString().toLowerCase();
-          
-          // 검색어가 상품명, 브랜드명, 카테고리명 중 하나라도 포함되면 추가
-          if (goodsName.contains(queryLower) || 
-              brandName.contains(queryLower) || 
-              categoryName1.contains(queryLower)) {
-            final giftCard = DataService.fromGiftCardMap(data);
-            searchResults.add(giftCard);
+      // 검색 결과가 10개 미만이면 500개씩 더 읽기
+      while (searchResults.length < 10 && currentLimit <= maxReads) {
+        // 캐시 우선 사용 (이미 읽은 데이터는 비용 없음)
+        final snapshot = await FirebaseFirestore.instance
+            .collection('giftcards')
+            .limit(currentLimit)
+            .get(const GetOptions(source: Source.cache));
+        
+        // 캐시에 없으면 서버에서 가져오기
+        final finalSnapshot = snapshot.docs.isEmpty
+            ? await FirebaseFirestore.instance
+                .collection('giftcards')
+                .limit(currentLimit)
+                .get(const GetOptions(source: Source.server))
+            : snapshot;
+        
+        // 새로 읽은 문서만 검색 (중복 제거)
+        for (final doc in finalSnapshot.docs) {
+          // 이미 처리한 문서는 건너뛰기
+          if (processedDocIds.contains(doc.id)) {
+            continue;
           }
-        } catch (e) {
-          debugPrint('⚠️ 상품 데이터 변환 오류 (${doc.id}): $e');
+          processedDocIds.add(doc.id);
+          
+          try {
+            final data = doc.data();
+            // 검색 대상 필드: brandName, goodsTypeNm, goodsName
+            final goodsName = (data['goodsName'] ?? '').toString().toLowerCase();
+            final brandName = (data['brandName'] ?? '').toString().toLowerCase();
+            final goodsTypeNm = (data['goodsTypeNm'] ?? '').toString().toLowerCase();
+            
+            // 검색어가 상품명, 브랜드명, 상품타입명 중 하나라도 포함되면 추가
+            if (goodsName.contains(queryLower) || 
+                brandName.contains(queryLower) || 
+                goodsTypeNm.contains(queryLower)) {
+              final giftCard = DataService.fromGiftCardMap(data);
+              searchResults.add(giftCard);
+            }
+          } catch (e) {
+            debugPrint('⚠️ 상품 데이터 변환 오류 (${doc.id}): $e');
+          }
         }
+        
+        // 읽기 비용 계산 (서버에서 읽은 경우만)
+        if (snapshot.docs.isEmpty) {
+          totalReads += finalSnapshot.docs.length;
+        }
+        
+        // 검색 결과가 10개 이상이거나 더 이상 읽을 문서가 없으면 종료
+        if (searchResults.length >= 10 || finalSnapshot.docs.length < currentLimit) {
+          break;
+        }
+        
+        // 다음 배치 읽기
+        currentLimit += batchSize;
       }
       
-      debugPrint('✅ 검색 결과: ${searchResults.length}개');
+      // 로그 설명: 읽은 문서 = 전체 읽은 문서 수, 실제 reads = 서버에서 읽은 문서 수 (비용 발생)
+      // 실제 reads가 0이면 모두 캐시에서 읽은 것이므로 비용이 발생하지 않음
+      debugPrint('✅ 검색 결과: ${searchResults.length}개 (검색어: "$query")');
+      debugPrint('   📊 읽은 문서: $currentLimit개 (캐시에서 읽음: ${currentLimit - totalReads}개, 서버에서 읽음: $totalReads개)');
+      debugPrint('   💰 실제 reads 비용: $totalReads개 (캐시는 비용 없음)');
       
       if (mounted && _selectedCategory == '상품 검색' && _searchQuery == query) {
         // 검색 결과 전체 저장
@@ -597,6 +667,7 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
   
   @override
   void dispose() {
+    _syncStatusSubscription?.cancel();
     _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -937,13 +1008,27 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
     return SliverMainAxisGroup(
       slivers: [
         // 기프티콘 목록
-        if (_giftCards.isEmpty)
+        // 동기화 중일 때 "상품 업데이트중..." 메시지 표시
+        if (_isSyncing && _giftCards.isEmpty)
           const SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
               child: Text(
-                '선택한 카테고리에 기프티콘이 없습니다',
+                '상품 업데이트중...',
                 style: TextStyle(color: Colors.grey),
+              ),
+            ),
+          )
+        else if (_giftCards.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Text(
+                // 검색 카테고리를 선택했고 검색어가 비어있을 때만 다른 문구 표시
+                (_selectedCategory == '상품 검색' && _searchQuery.isEmpty)
+                    ? '더 많은 기프티콘을 찾아보세요'
+                    : '선택한 카테고리에 기프티콘이 없습니다',
+                style: const TextStyle(color: Colors.grey),
               ),
             ),
           )
@@ -1050,6 +1135,13 @@ class _CategoryFilterBarState extends State<_CategoryFilterBar> with AutomaticKe
           
           // '상품 검색' 카테고리이고 선택되었을 때 검색 입력 필드 표시
           if (isSearchCategory && isSelected && widget.searchController != null) {
+            // 검색어 길이에 따라 동적으로 너비 계산
+            final searchText = widget.searchQuery;
+            final textLength = searchText.length;
+            // 최소 너비: 120, 최대 너비: 300
+            // 문자당 약 8픽셀 추가 (폰트 크기 14 기준)
+            final calculatedWidth = (120.0 + (textLength * 8.0)).clamp(120.0, 300.0);
+            
             return Padding(
               key: ValueKey('category_$category'),
               padding: EdgeInsets.only(
@@ -1057,10 +1149,7 @@ class _CategoryFilterBarState extends State<_CategoryFilterBar> with AutomaticKe
               ),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                constraints: const BoxConstraints(
-                  minWidth: 120,
-                  maxWidth: 180,
-                ),
+                width: calculatedWidth, // 검색어 길이에 따라 동적 너비
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: AppTheme.primaryColor,
@@ -1088,6 +1177,11 @@ class _CategoryFilterBarState extends State<_CategoryFilterBar> with AutomaticKe
                     ),
                     prefixIcon: GestureDetector(
                       onTap: () {
+                        // 돋보기 아이콘 클릭 시 검색 실행
+                        final searchText = widget.searchController?.text ?? '';
+                        if (searchText.trim().isNotEmpty && widget.onSearchSubmitted != null) {
+                          widget.onSearchSubmitted!(searchText.trim());
+                        }
                         // 키보드 닫기
                         FocusScope.of(context).unfocus();
                       },
@@ -1384,6 +1478,47 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
       final dataService = Provider.of<DataService>(context, listen: false);
       final ownedCards = await dataService.getOwnedGiftCards(authService.user!.uid);
       
+      // pinStatusCd가 없거나 오래된 기프티콘만 선택적으로 백그라운드에서 API 호출 (성능 최적화)
+      // 백그라운드에서 비동기로 업데이트하여 로딩을 블로킹하지 않음
+      final List<Future<void>> updateFutures = [];
+      for (final card in ownedCards) {
+        final giftCardInfo = card['giftCardInfo'];
+        if (giftCardInfo != null && giftCardInfo is Map) {
+          final infoMap = Map<String, dynamic>.from(giftCardInfo);
+          final trId = infoMap['trId'] ?? card['trId'];
+          final lastRefreshed = card['lastRefreshed'] as Timestamp?;
+          
+          // trId가 있고, 마지막 업데이트가 1시간 이상 전이면 백그라운드에서 API 호출
+          // pinStatusCd가 있어도 상태가 변경될 수 있으므로 주기적으로 확인 필요
+          final shouldUpdate = (trId != null && trId.toString().isNotEmpty) &&
+                              (lastRefreshed == null || 
+                               DateTime.now().difference(lastRefreshed.toDate()).inHours >= 1);
+          
+          if (shouldUpdate) {
+            // 백그라운드에서 비동기로 업데이트 (블로킹하지 않음)
+            updateFutures.add(
+              dataService.refreshGiftCardBarcode(trId.toString()).then((refreshedInfo) {
+                if (refreshedInfo != null && refreshedInfo['giftCardInfo'] != null) {
+                  final refreshedGiftCardInfo = refreshedInfo['giftCardInfo'] as Map<String, dynamic>;
+                  debugPrint('✅ pinStatusCd 백그라운드 업데이트: ${refreshedGiftCardInfo['pinStatusCd']}');
+                }
+              }).catchError((e) {
+                debugPrint('⚠️ 백그라운드 pinStatusCd 업데이트 실패: $e');
+              })
+            );
+          }
+        }
+      }
+      
+      // 백그라운드 업데이트는 기다리지 않고 바로 필터링 진행 (사용자 경험 개선)
+      // 업데이트는 백그라운드에서 진행되며, 다음 로드 시 반영됨
+      if (updateFutures.isNotEmpty) {
+        Future.wait(updateFutures).catchError((e) {
+          debugPrint('⚠️ 백그라운드 업데이트 오류: $e');
+          return <void>[];
+        });
+      }
+      
       // 바코드 정보가 있는 기프티콘만 필터링
       final filteredCards = ownedCards.where((card) {
         final giftCardInfo = card['giftCardInfo'];
@@ -1408,6 +1543,16 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
           return null;
         }
         
+        // 원본 바코드/PIN 값 확인 (필터링 전)
+        final rawBarcode = infoMap['barcode']?.toString().trim() ?? 
+                         infoMap['barcodeNumber']?.toString().trim() ?? 
+                         infoMap['barcode_no']?.toString().trim() ?? 
+                         infoMap['pinNo']?.toString().trim() ?? '';
+        final rawPinNumber = infoMap['pinNumber']?.toString().trim() ?? 
+                            infoMap['pin']?.toString().trim() ?? 
+                            infoMap['pin_no']?.toString().trim() ?? 
+                            infoMap['pinNo']?.toString().trim() ?? '';
+        
         final barcode = extractValidBarcodeOrPin(infoMap['barcode']) ??
                         extractValidBarcodeOrPin(infoMap['barcodeNumber']) ??
                         extractValidBarcodeOrPin(infoMap['barcode_no']) ??
@@ -1421,10 +1566,56 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
                             infoMap['couponImgUrl'] ?? 
                             '';
         
-        // 바코드, PIN, 또는 바코드 이미지 중 하나라도 있으면 표시
-        return (barcode != null && barcode.isNotEmpty) || 
-               (pinNumber != null && pinNumber.isNotEmpty) || 
-               (barcodeImage != null && barcodeImage.toString().trim().isNotEmpty);
+        // 사용한 기프티콘 필터링: pinStatusCd 확인 (API 문서 기준)
+        // pinStatusCd: 01=발행, 02=교환(사용완료), 03=반품, 04=관리폐기, 05=환불, 06=재발행, 07=구매취소(폐기), 08=기간만료, 등등
+        final pinStatusCd = infoMap['pinStatusCd']?.toString().trim() ?? '';
+        final pinStatusNm = infoMap['pinStatusNm']?.toString().trim() ?? '';
+        
+        // 사용 불가능한 상태 코드: 02(교환/사용완료), 03(반품), 04(관리폐기), 05(환불), 07(구매취소/폐기), 08(기간만료), 10(잔액환불), 11(잔액기간만료), 12(기간만료취소), 13(환전), 14(환급), 15(잔액환급), 16(잔액기간만료취소)
+        final usedStatusCodes = ['02', '03', '04', '05', '07', '08', '10', '11', '12', '13', '14', '15', '16'];
+        final isUsedByPinStatus = usedStatusCodes.contains(pinStatusCd);
+        
+        // 기존 필터링 조건들 (하위 호환성)
+        final status = infoMap['status']?.toString().toLowerCase() ?? '';
+        final isUsedByStatus = status == 'used' || 
+                              status == '사용됨' || 
+                              status == '사용' ||
+                              status == 'expired' ||
+                              status == '만료됨' ||
+                              status == '만료';
+        final isUsedFlag = infoMap['isUsed'] == true || infoMap['isUsed'] == 'true';
+        final usedAt = infoMap['usedAt'];
+        final hasUsedAt = usedAt != null;
+        final isBarcodeIssued = rawBarcode.toLowerCase() == '발행' || 
+                               rawBarcode.toLowerCase() == '발행됨' || 
+                               rawBarcode.toLowerCase() == 'issued' ||
+                               rawPinNumber.toLowerCase() == '발행' || 
+                               rawPinNumber.toLowerCase() == '발행됨' || 
+                               rawPinNumber.toLowerCase() == 'issued';
+        final hasNoValidBarcode = (barcode == null || barcode.isEmpty) && 
+                                  (pinNumber == null || pinNumber.isEmpty) && 
+                                  (barcodeImage == null || barcodeImage.toString().trim().isEmpty);
+        
+        // trId 확인 (구매 완료 여부)
+        final trId = infoMap['trId'] ?? card['trId'];
+        final hasTrId = trId != null && trId.toString().trim().isNotEmpty;
+        
+        // 새로 구매한 상품은 pinStatusCd가 비어있고 바코드가 없을 수 있음 (발행 대기 중)
+        // trId가 있으면 구매는 완료된 상태이므로 표시해야 함
+        final isPendingIssue = pinStatusCd.isEmpty && hasNoValidBarcode && hasTrId;
+        
+        // 사용한 기프티콘은 제외 (pinStatusCd 우선 확인)
+        // 단, 발행 대기 중인 상품(pinStatusCd가 비어있고 trId가 있는 경우)은 표시
+        if (isUsedByPinStatus || isUsedByStatus || isUsedFlag || hasUsedAt || isBarcodeIssued || (hasNoValidBarcode && !isPendingIssue)) {
+          // 디버그: 사용한 기프티콘 필터링 로그 (간소화)
+          if (isUsedByPinStatus) {
+            debugPrint('🚫 사용한 기프티콘 필터링: ${card['goodsName'] ?? '알 수 없음'} (pinStatusCd: $pinStatusCd, pinStatusNm: $pinStatusNm)');
+          }
+          return false;
+        }
+        
+        // 바코드, PIN, 바코드 이미지 중 하나라도 있거나, 발행 대기 중인 상품이면 표시
+        return true;
       }).toList();
       
       if (mounted) {
@@ -1814,6 +2005,16 @@ class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
                       giftCardInfo?['expire_date'] ?? 
                       '';
     
+    // 원본 데이터 확인용 디버그 (모든 필드 확인)
+    debugPrint('📋 giftCardInfo 원본 데이터 (모든 필드):');
+    if (giftCardInfo != null) {
+      giftCardInfo.forEach((key, value) {
+        debugPrint('   $key: $value');
+      });
+    } else {
+      debugPrint('   giftCardInfo가 null입니다.');
+    }
+    
     debugPrint('📋 추출된 바코드 정보:');
     debugPrint('   barcode: $barcode');
     if (barcodeImageUrl.isNotEmpty) {
@@ -2109,6 +2310,47 @@ class _OwnedGiftCardListTabSliverState extends State<_OwnedGiftCardListTabSliver
       final dataService = Provider.of<DataService>(context, listen: false);
       final ownedCards = await dataService.getOwnedGiftCards(authService.user!.uid);
       
+      // pinStatusCd가 없거나 오래된 기프티콘만 선택적으로 백그라운드에서 API 호출 (성능 최적화)
+      // 백그라운드에서 비동기로 업데이트하여 로딩을 블로킹하지 않음
+      final List<Future<void>> updateFutures = [];
+      for (final card in ownedCards) {
+        final giftCardInfo = card['giftCardInfo'];
+        if (giftCardInfo != null && giftCardInfo is Map) {
+          final infoMap = Map<String, dynamic>.from(giftCardInfo);
+          final trId = infoMap['trId'] ?? card['trId'];
+          final lastRefreshed = card['lastRefreshed'] as Timestamp?;
+          
+          // trId가 있고, 마지막 업데이트가 1시간 이상 전이면 백그라운드에서 API 호출
+          // pinStatusCd가 있어도 상태가 변경될 수 있으므로 주기적으로 확인 필요
+          final shouldUpdate = (trId != null && trId.toString().isNotEmpty) &&
+                              (lastRefreshed == null || 
+                               DateTime.now().difference(lastRefreshed.toDate()).inHours >= 1);
+          
+          if (shouldUpdate) {
+            // 백그라운드에서 비동기로 업데이트 (블로킹하지 않음)
+            updateFutures.add(
+              dataService.refreshGiftCardBarcode(trId.toString()).then((refreshedInfo) {
+                if (refreshedInfo != null && refreshedInfo['giftCardInfo'] != null) {
+                  final refreshedGiftCardInfo = refreshedInfo['giftCardInfo'] as Map<String, dynamic>;
+                  debugPrint('✅ pinStatusCd 백그라운드 업데이트: ${refreshedGiftCardInfo['pinStatusCd']}');
+                }
+              }).catchError((e) {
+                debugPrint('⚠️ 백그라운드 pinStatusCd 업데이트 실패: $e');
+              })
+            );
+          }
+        }
+      }
+      
+      // 백그라운드 업데이트는 기다리지 않고 바로 필터링 진행 (사용자 경험 개선)
+      // 업데이트는 백그라운드에서 진행되며, 다음 로드 시 반영됨
+      if (updateFutures.isNotEmpty) {
+        Future.wait(updateFutures).catchError((e) {
+          debugPrint('⚠️ 백그라운드 업데이트 오류: $e');
+          return <void>[];
+        });
+      }
+      
       // 바코드 정보가 있는 기프티콘만 필터링
       final filteredCards = ownedCards.where((card) {
         final giftCardInfo = card['giftCardInfo'];
@@ -2133,6 +2375,16 @@ class _OwnedGiftCardListTabSliverState extends State<_OwnedGiftCardListTabSliver
           return null;
         }
         
+        // 원본 바코드/PIN 값 확인 (필터링 전)
+        final rawBarcode = infoMap['barcode']?.toString().trim() ?? 
+                         infoMap['barcodeNumber']?.toString().trim() ?? 
+                         infoMap['barcode_no']?.toString().trim() ?? 
+                         infoMap['pinNo']?.toString().trim() ?? '';
+        final rawPinNumber = infoMap['pinNumber']?.toString().trim() ?? 
+                            infoMap['pin']?.toString().trim() ?? 
+                            infoMap['pin_no']?.toString().trim() ?? 
+                            infoMap['pinNo']?.toString().trim() ?? '';
+        
         final barcode = extractValidBarcodeOrPin(infoMap['barcode']) ??
                         extractValidBarcodeOrPin(infoMap['barcodeNumber']) ??
                         extractValidBarcodeOrPin(infoMap['barcode_no']) ??
@@ -2146,10 +2398,56 @@ class _OwnedGiftCardListTabSliverState extends State<_OwnedGiftCardListTabSliver
                             infoMap['couponImgUrl'] ?? 
                             '';
         
-        // 바코드, PIN, 또는 바코드 이미지 중 하나라도 있으면 표시
-        return (barcode != null && barcode.isNotEmpty) || 
-               (pinNumber != null && pinNumber.isNotEmpty) || 
-               (barcodeImage != null && barcodeImage.toString().trim().isNotEmpty);
+        // 사용한 기프티콘 필터링: pinStatusCd 확인 (API 문서 기준)
+        // pinStatusCd: 01=발행, 02=교환(사용완료), 03=반품, 04=관리폐기, 05=환불, 06=재발행, 07=구매취소(폐기), 08=기간만료, 등등
+        final pinStatusCd = infoMap['pinStatusCd']?.toString().trim() ?? '';
+        final pinStatusNm = infoMap['pinStatusNm']?.toString().trim() ?? '';
+        
+        // 사용 불가능한 상태 코드: 02(교환/사용완료), 03(반품), 04(관리폐기), 05(환불), 07(구매취소/폐기), 08(기간만료), 10(잔액환불), 11(잔액기간만료), 12(기간만료취소), 13(환전), 14(환급), 15(잔액환급), 16(잔액기간만료취소)
+        final usedStatusCodes = ['02', '03', '04', '05', '07', '08', '10', '11', '12', '13', '14', '15', '16'];
+        final isUsedByPinStatus = usedStatusCodes.contains(pinStatusCd);
+        
+        // 기존 필터링 조건들 (하위 호환성)
+        final status = infoMap['status']?.toString().toLowerCase() ?? '';
+        final isUsedByStatus = status == 'used' || 
+                              status == '사용됨' || 
+                              status == '사용' ||
+                              status == 'expired' ||
+                              status == '만료됨' ||
+                              status == '만료';
+        final isUsedFlag = infoMap['isUsed'] == true || infoMap['isUsed'] == 'true';
+        final usedAt = infoMap['usedAt'];
+        final hasUsedAt = usedAt != null;
+        final isBarcodeIssued = rawBarcode.toLowerCase() == '발행' || 
+                               rawBarcode.toLowerCase() == '발행됨' || 
+                               rawBarcode.toLowerCase() == 'issued' ||
+                               rawPinNumber.toLowerCase() == '발행' || 
+                               rawPinNumber.toLowerCase() == '발행됨' || 
+                               rawPinNumber.toLowerCase() == 'issued';
+        final hasNoValidBarcode = (barcode == null || barcode.isEmpty) && 
+                                  (pinNumber == null || pinNumber.isEmpty) && 
+                                  (barcodeImage == null || barcodeImage.toString().trim().isEmpty);
+        
+        // trId 확인 (구매 완료 여부)
+        final trId = infoMap['trId'] ?? card['trId'];
+        final hasTrId = trId != null && trId.toString().trim().isNotEmpty;
+        
+        // 새로 구매한 상품은 pinStatusCd가 비어있고 바코드가 없을 수 있음 (발행 대기 중)
+        // trId가 있으면 구매는 완료된 상태이므로 표시해야 함
+        final isPendingIssue = pinStatusCd.isEmpty && hasNoValidBarcode && hasTrId;
+        
+        // 사용한 기프티콘은 제외 (pinStatusCd 우선 확인)
+        // 단, 발행 대기 중인 상품(pinStatusCd가 비어있고 trId가 있는 경우)은 표시
+        if (isUsedByPinStatus || isUsedByStatus || isUsedFlag || hasUsedAt || isBarcodeIssued || (hasNoValidBarcode && !isPendingIssue)) {
+          // 디버그: 사용한 기프티콘 필터링 로그 (간소화)
+          if (isUsedByPinStatus) {
+            debugPrint('🚫 사용한 기프티콘 필터링: ${card['goodsName'] ?? '알 수 없음'} (pinStatusCd: $pinStatusCd, pinStatusNm: $pinStatusNm)');
+          }
+          return false;
+        }
+        
+        // 바코드, PIN, 바코드 이미지 중 하나라도 있거나, 발행 대기 중인 상품이면 표시
+        return true;
       }).toList();
       
       if (mounted) {
