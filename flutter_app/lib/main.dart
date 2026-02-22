@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'firebase_options.dart';
 import 'screens/splash_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/search/search_screen.dart';
@@ -14,17 +15,9 @@ import 'theme/app_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Firebase 초기화
+  // Firebase 초기화 (플랫폼별 설정 사용)
   await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: "AIzaSyADNSIqYGqtFooPK9MjX4_UrLNoY0hcu4M",
-      authDomain: "community-b19fb.firebaseapp.com",
-      projectId: "community-b19fb",
-      storageBucket: "community-b19fb.firebasestorage.app",
-      messagingSenderId: "807594698988",
-      appId: "1:807594698988:web:3bf482c3e1d88df5d09dc9",
-      measurementId: "G-3YW94NCEJM",
-    ),
+    options: DefaultFirebaseOptions.currentPlatform,
   );
   
   runApp(const MyApp());

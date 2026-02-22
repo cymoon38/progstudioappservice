@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "807594698988",
+    "project_id": "community-b19fb",
+    "storage_bucket": "community-b19fb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:807594698988:android:a476df4963d5dbdfd09dc9",
+        "android_client_info": {
+          "package_name": "com.progstudio3820.canvascash"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "807594698988-h0fa0sbcfti37sltlijnibab98svvjrc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCr7Ls0mvfa9HNEexd2qZlxkLBU0MTT8hM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "807594698988-h0fa0sbcfti37sltlijnibab98svvjrc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

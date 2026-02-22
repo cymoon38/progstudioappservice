@@ -1752,12 +1752,8 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
       dateText = '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')} 구매';
     }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         onTap: widget.onTap,
         borderRadius: BorderRadius.circular(12),
@@ -1772,6 +1768,7 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: goodsImg == null ? null : Colors.grey[200],
+                  border: Border.all(color: const Color.fromARGB(255, 225, 225, 225)!, width: 1),
                 ),
                 child: goodsImg != null && goodsImg.isNotEmpty
                     ? ClipRRect(
