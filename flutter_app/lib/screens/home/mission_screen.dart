@@ -312,6 +312,23 @@ class _MissionScreenState extends State<MissionScreen> {
                           
                           debugPrint('✅ [MissionScreen] 사용자 확인: ${authService.user!.uid}');
                           
+                          // 좋아요 3개 누르기 미션: 참가비 50코인 사전 확인
+                          if (mission.type == 'like_click') {
+                            final coins = authService.userData?['coins'];
+                            final coinCount = coins is int ? coins : int.tryParse('$coins') ?? 0;
+                            if (coinCount < 50) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('50코인이 필요합니다. 코인이 부족합니다.'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                          }
+                          
                           try {
                             // 시간 제한 미션 시작
                             debugPrint('🚀 [MissionScreen] startMission 호출 시작');
@@ -337,8 +354,12 @@ class _MissionScreenState extends State<MissionScreen> {
                               debugPrint('❌ [MissionScreen] 미션 시작 실패 (success=false)');
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('미션 시작에 실패했습니다.'),
+                                  SnackBar(
+                                    content: Text(
+                                      mission.type == 'like_click'
+                                          ? '50코인이 부족하여 미션에 참가할 수 없습니다.'
+                                          : '미션 시작에 실패했습니다.',
+                                    ),
                                     backgroundColor: Colors.red,
                                   ),
                                 );
@@ -365,14 +386,62 @@ class _MissionScreenState extends State<MissionScreen> {
                             borderRadius: BorderRadius.circular(25),
                           ),
                         ),
-                        child: const Text(
-                          '미션 참가하기',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                        child: mission.type == 'like_click'
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Text(
+                                    '미션 참가하기 ',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'C',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          '50',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const Text(
+                                '미션 참가하기',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                       ),
                     ),
                   ),

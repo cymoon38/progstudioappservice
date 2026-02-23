@@ -9,7 +9,9 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
+import '../post_detail_screen.dart';
 import 'giftcard_detail_screen.dart';
+import 'package:intl/intl.dart';
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
@@ -166,12 +168,65 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Widget _buildItemTab() {
-    return Center(
-      child: Text(
-        '아이템',
-        style: TextStyle(
-          fontSize: 18,
-          color: AppTheme.textSecondary,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 16),
+          _ItemCard(
+            name: '장작',
+            price: 30,
+            description: '게시물을 피드 상단으로 이동시킵니다',
+            onUse: () => _openSelectPostForItem(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openSelectPostForItem(BuildContext context) async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (authService.user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그인이 필요합니다.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    final dataService = Provider.of<DataService>(context, listen: false);
+    final myPosts = await dataService.getMyPosts(authService.user!.uid);
+    if (!context.mounted) return;
+    if (myPosts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('사용할 수 있는 게시물이 없습니다.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => _SelectPostForItemScreen(
+          posts: myPosts,
+          itemName: '장작',
+          itemCost: 30,
+          onSelected: (postId) async {
+            final ok = await dataService.useItemOnPost(
+              userId: authService.user!.uid,
+              postId: postId,
+              itemId: '장작',
+              cost: 30,
+            );
+            if (!context.mounted) return;
+            Navigator.of(context).pop();
+            if (ok) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('장작을 사용했습니다. 게시물이 피드 상단으로 올라갑니다.')),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('30코인이 부족하거나 사용에 실패했습니다.'), backgroundColor: Colors.red),
+              );
+            }
+          },
         ),
       ),
     );
@@ -249,6 +304,228 @@ class _TabButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// 아이템 카드 (장작 등)
+class _ItemCard extends StatelessWidget {
+  final String name;
+  final int price;
+  final String description;
+  final VoidCallback onUse;
+
+  const _ItemCard({
+    required this.name,
+    required this.price,
+    required this.description,
+    required this.onUse,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      '$price',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'C',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              description,
+              style: TextStyle(fontSize: 14, color: AppTheme.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: onUse,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('사용하기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// 아이템 사용 시 게시물 선택 화면
+class _SelectPostForItemScreen extends StatelessWidget {
+  final List<Post> posts;
+  final String itemName;
+  final int itemCost;
+  final Function(String postId) onSelected;
+
+  const _SelectPostForItemScreen({
+    required this.posts,
+    required this.itemName,
+    required this.itemCost,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: Text('$itemName 사용할 게시물 선택'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        foregroundColor: AppTheme.textPrimary,
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: posts.length,
+        itemBuilder: (context, index) {
+          final post = posts[index];
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: Text('$itemName 사용'),
+                              content: Text(
+                                '이 게시물을 피드 상단으로 올리겠습니다. $itemCost코인이 차감됩니다.',
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                                TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('사용')),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) onSelected(post.id);
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              post.title.isNotEmpty ? post.title : '제목 없음',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              DateFormat('yyyy.MM.dd').format(post.date),
+                              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(Icons.favorite, size: 14.4, color: const Color(0xFFFF6B6B)),
+                                const SizedBox(width: 4),
+                                Text('${post.likes.length}', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                                const SizedBox(width: 12),
+                                Icon(Icons.comment_outlined, size: 14.4, color: AppTheme.primaryColor),
+                                const SizedBox(width: 4),
+                                Text('${post.totalCommentCount}', style: TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PostDetailScreen(postId: post.id),
+                            ),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(24),
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Icon(Icons.chevron_right, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (index < posts.length - 1)
+                const Divider(
+                  color: Color(0xFFF0F0F0),
+                  thickness: 2,
+                  height: 1,
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -817,64 +1094,89 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
         );
       }
       
-      // 모든 배치를 병렬로 실행
-      final batchResults = await Future.wait(batchFutures);
+      // 모든 배치를 병렬로 실행 (캐시 우선)
+      List<List<GiftCard>> batchResults = await Future.wait(batchFutures);
       for (final batchCards in batchResults) {
         giftCards.addAll(batchCards);
       }
       
-      debugPrint('📊 Firestore에서 총 조회된 상품: ${giftCards.length}개');
+      // 캐시가 비어 있으면 서버에서 조회 (캐시만 쓰면 0건일 때 에러가 없어 서버를 안 부름)
+      if (giftCards.isEmpty && validGoodsCodes.isNotEmpty) {
+        debugPrint('📋 캐시에 데이터 없음. 서버에서 조회...');
+        final List<Future<List<GiftCard>>> serverFutures = [];
+        for (int i = 0; i < validGoodsCodes.length; i += maxWhereInSize) {
+          final batch = validGoodsCodes.skip(i).take(maxWhereInSize).toList();
+          serverFutures.add(
+            FirebaseFirestore.instance
+                .collection('giftcards')
+                .where(FieldPath.documentId, whereIn: batch)
+                .get(const GetOptions(source: Source.server))
+                .then((snapshot) {
+                  final List<GiftCard> batchCards = [];
+                  for (final doc in snapshot.docs) {
+                    try {
+                      final data = doc.data();
+                      batchCards.add(DataService.fromGiftCardMap(data));
+                    } catch (e) {
+                      debugPrint('⚠️ 상품 데이터 변환 오류 (${doc.id}): $e');
+                    }
+                  }
+                  return batchCards;
+                })
+                .catchError((e) {
+                  debugPrint('⚠️ Firestore 서버 조회 오류: $e');
+                  return <GiftCard>[];
+                }),
+          );
+        }
+        final serverResults = await Future.wait(serverFutures);
+        for (final batchCards in serverResults) {
+          giftCards.addAll(batchCards);
+        }
+        debugPrint('📊 Firestore 서버에서 조회된 상품: ${giftCards.length}개');
+      }
       
-      debugPrint('✅ 필터링된 상품: ${giftCards.length}개 (요청한 상품코드: ${goodsCodes.length}개)');
-      
-      // Firestore에서 찾지 못한 상품코드가 있으면 상세 API로 시도 (병렬 처리)
       final foundGoodsCodes = giftCards.map((card) => card.goodsCode).toSet();
       final missingGoodsCodes = validGoodsCodes.where((code) => !foundGoodsCodes.contains(code)).toList();
-      
-      if (missingGoodsCodes.isNotEmpty) {
-        debugPrint('⚠️ Firestore에서 찾지 못한 상품코드: ${missingGoodsCodes.length}개');
-        
-        // 상세 API를 병렬로 호출 (최대 5개씩 동시 실행)
-        const maxConcurrent = 5;
-        for (int i = 0; i < missingGoodsCodes.length; i += maxConcurrent) {
-          final batch = missingGoodsCodes.skip(i).take(maxConcurrent).toList();
-          final detailFutures = batch.map((goodsCode) async {
-            try {
-              final detail = await dataService.getGiftCardDetail(goodsCode);
-              if (detail != null) {
-                final goodsDetail = detail['goodsDetail'] ?? detail;
-                if (goodsDetail is Map && goodsDetail.isNotEmpty) {
-                  try {
-                    final giftCard = DataService.fromGiftCardMap(Map<String, dynamic>.from(goodsDetail));
-                    // Firestore에 저장 (백그라운드, await 하지 않음)
-                    FirebaseFirestore.instance
-                        .collection('giftcards')
-                        .doc(goodsCode)
-                        .set(Map<String, dynamic>.from(goodsDetail), SetOptions(merge: true))
-                        .catchError((e) => debugPrint('⚠️ Firestore 저장 실패 ($goodsCode): $e'));
-                    return giftCard;
-                  } catch (e) {
-                    debugPrint('⚠️ 상품 데이터 변환 오류 ($goodsCode): $e');
-                    return null;
-                  }
+      // Firestore(캐시+서버)에서도 하나도 없을 때만 API로 최소한만 로드 (빈 화면 방지)
+      if (giftCards.isEmpty && missingGoodsCodes.isNotEmpty) {
+        debugPrint('⚠️ Firestore에 데이터 없음. API로 최대 10개 시드 로드...');
+        const seedLimit = 10;
+        final toFetch = missingGoodsCodes.take(seedLimit).toList();
+        final detailFutures = toFetch.map((goodsCode) async {
+          try {
+            final detail = await dataService.getGiftCardDetail(goodsCode);
+            if (detail != null) {
+              final goodsDetail = detail['goodsDetail'] ?? detail;
+              if (goodsDetail is Map && goodsDetail.isNotEmpty) {
+                try {
+                  final giftCard = DataService.fromGiftCardMap(Map<String, dynamic>.from(goodsDetail));
+                  FirebaseFirestore.instance
+                      .collection('giftcards')
+                      .doc(goodsCode)
+                      .set(Map<String, dynamic>.from(goodsDetail), SetOptions(merge: true))
+                      .catchError((e) => debugPrint('⚠️ Firestore 저장 실패 ($goodsCode): $e'));
+                  return giftCard;
+                } catch (e) {
+                  debugPrint('⚠️ 상품 데이터 변환 오류 ($goodsCode): $e');
+                  return null;
                 }
               }
-              return null;
-            } catch (e) {
-              debugPrint('⚠️ 상품코드 $goodsCode 상세 정보 조회 실패: $e');
-              return null;
             }
-          }).toList();
-          
-          final detailResults = await Future.wait(detailFutures);
-          for (final giftCard in detailResults) {
-            if (giftCard != null) {
-              giftCards.add(giftCard);
-            }
+            return null;
+          } catch (e) {
+            debugPrint('⚠️ 상품코드 $goodsCode 조회 실패: $e');
+            return null;
           }
+        }).toList();
+        final seedResults = await Future.wait(detailFutures);
+        for (final card in seedResults) {
+          if (card != null) giftCards.add(card);
         }
-        
-        debugPrint('✅ API로 추가된 상품: ${giftCards.length - foundGoodsCodes.length}개');
+        debugPrint('✅ API 시드 로드: ${giftCards.length}개');
+      }
+      if (giftCards.isNotEmpty && missingGoodsCodes.isNotEmpty) {
+        debugPrint('⚠️ Firestore에 없는 상품 ${missingGoodsCodes.length}개 건너뜀');
       }
       
       // 상품코드 입력 순서대로 정렬

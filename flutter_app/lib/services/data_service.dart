@@ -31,6 +31,8 @@ class Post {
   final DateTime? popularDate; // 인기작품으로 선정된 날짜
   final bool popularRewarded; // 인기작품 보상/미션 처리 완료 여부 (중복 방지)
   final int? coins;
+  /// 끌올(장작 등) 시 갱신. 정렬 시 sortTime ?? date 사용.
+  final DateTime? sortTime;
 
   Post({
     required this.id,
@@ -52,6 +54,7 @@ class Post {
     this.popularDate,
     this.popularRewarded = false,
     this.coins,
+    this.sortTime,
   });
 
   // 대댓글을 포함한 총 댓글 수 계산
@@ -102,6 +105,7 @@ class Post {
       popularDate: (data['popularDate'] as Timestamp?)?.toDate(),
       popularRewarded: data['popularRewarded'] ?? false,
       coins: data['coins'],
+      sortTime: (data['sortTime'] as Timestamp?)?.toDate(),
     );
   }
 }
@@ -355,6 +359,8 @@ class DataService extends ChangeNotifier {
           .map((doc) => Post.fromFirestore(doc))
           .where((post) => post.type != 'notice')
           .toList();
+      // 끌올(장작) 반영: sortTime 기준으로 상단 노출, 없으면 date
+      _posts.sort((a, b) => (b.sortTime ?? b.date).compareTo(a.sortTime ?? a.date));
       notifyListeners();
       return _posts;
     } catch (e) {
@@ -363,6 +369,72 @@ class DataService extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// 내가 쓴 게시물 목록 (아이템 사용 시 선택용). 인덱스 없이 동작하도록 최근 글을 가져온 뒤 authorUid/author로 필터.
+  Future<List<Post>> getMyPosts(String userId, {int limit = 50}) async {
+    try {
+      // 최근 게시물만 가져와서 메모리에서 필터 (authorUid+date 복합 인덱스 불필요)
+      final snapshot = await _firestore
+          .collection('posts')
+          .orderBy('date', descending: true)
+          .limit(500)
+          .get();
+      final all = snapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
+      var mine = all.where((p) => p.authorUid == userId).toList();
+      if (mine.isEmpty) {
+        // 예전 글은 authorUid가 없을 수 있음 → 작성자 이름으로 한 번 더 찾기
+        final userDoc = await _firestore.collection('users').doc(userId).get();
+        final userName = userDoc.data()?['name']?.toString();
+        if (userName != null && userName.isNotEmpty) {
+          mine = all.where((p) => p.author == userName).toList();
+        }
+      }
+      return mine.take(limit).toList();
+    } catch (e) {
+      debugPrint('내 게시물 로드 오류: $e');
+      return [];
+    }
+  }
+
+  /// 장작 아이템 사용: 해당 게시물을 피드 상단으로 끌올. 30코인 차감. 본인 게시물만 가능.
+  Future<bool> useItemOnPost({
+    required String userId,
+    required String postId,
+    String itemId = '장작',
+    int cost = 30,
+  }) async {
+    try {
+      final postRef = _firestore.collection('posts').doc(postId);
+      final postSnap = await postRef.get();
+      if (!postSnap.exists) {
+        debugPrint('❌ [useItemOnPost] 게시물 없음: $postId');
+        return false;
+      }
+      final data = postSnap.data() ?? {};
+      final authorUid = data['authorUid']?.toString();
+      if (authorUid != userId) {
+        debugPrint('❌ [useItemOnPost] 본인 게시물만 사용 가능: authorUid=$authorUid');
+        return false;
+      }
+      final userRef = _firestore.collection('users').doc(userId);
+      final userSnap = await userRef.get();
+      if (!userSnap.exists) return false;
+      final userData = userSnap.data() ?? {};
+      final coins = (userData['coins'] ?? 0) is int ? (userData['coins'] ?? 0) as int : int.tryParse('${userData['coins']}') ?? 0;
+      if (coins < cost) {
+        debugPrint('❌ [useItemOnPost] 코인 부족: $coins < $cost');
+        return false;
+      }
+      await addCoins(userId: userId, amount: -cost, type: 'item_$itemId');
+      await postRef.update({'sortTime': FieldValue.serverTimestamp()});
+      debugPrint('✅ [useItemOnPost] 장작 사용 완료: postId=$postId');
+      await getAllPosts();
+      return true;
+    } catch (e) {
+      debugPrint('❌ [useItemOnPost] 오류: $e');
+      return false;
     }
   }
 
@@ -656,6 +728,7 @@ class DataService extends ChangeNotifier {
         'likes': [],
         'comments': [],
         'date': FieldValue.serverTimestamp(),
+        'sortTime': FieldValue.serverTimestamp(), // 끌올(장작) 정렬용
         'views': 0,
         'type': type ?? 'original',
         'originalPostId': originalPostId,
@@ -821,6 +894,7 @@ class DataService extends ChangeNotifier {
         popularDate: post.popularDate,
         popularRewarded: post.popularRewarded,
         coins: post.coins,
+        sortTime: post.sortTime,
       );
       
       // 로컬 리스트 업데이트
@@ -905,6 +979,7 @@ class DataService extends ChangeNotifier {
             popularDate: popularDate,
             popularRewarded: true,
             coins: updatedPost.coins,
+            sortTime: updatedPost.sortTime,
           );
           final postIdx = _posts.indexWhere((p) => p.id == postId);
           if (postIdx != -1) {
@@ -2612,6 +2687,27 @@ class DataService extends ChangeNotifier {
           debugPrint('ℹ️ 이미 진행 중인 미션입니다. 진행도 유지: missionId=$missionId, userId=$userId');
           return true;
         }
+      }
+
+      // 좋아요 3개 누르기 미션: 참가 시 50코인 차감
+      const int likeClickEntryFee = 50;
+      if (mission.type == 'like_click') {
+        final userRef = _firestore.collection('users').doc(userId);
+        final userDoc = await userRef.get();
+        if (!userDoc.exists) return false;
+        final userData = userDoc.data() ?? {};
+        final currentCoins = (userData['coins'] ?? 0) is int ? (userData['coins'] ?? 0) as int : int.tryParse('${userData['coins']}') ?? 0;
+        if (currentCoins < likeClickEntryFee) {
+          debugPrint('❌ [startMission] 코인 부족: 보유 $currentCoins, 필요 $likeClickEntryFee');
+          return false;
+        }
+        await addCoins(userId: userId, amount: -likeClickEntryFee, type: 'mission_참가');
+        debugPrint('✅ [startMission] 좋아요 3개 미션 참가비 50코인 차감 완료');
+      }
+
+      if (snapshot.exists) {
+        final data = snapshot.data() as Map<String, dynamic>;
+        final existingUserId = data['userId'] as String?;
         
         // 문서가 존재하므로 update만 사용 (userId는 변경하지 않음)
         debugPrint('🔄 [startMission] update 시도: missionId=$missionId, userId=$userId, existingUserId=$existingUserId');

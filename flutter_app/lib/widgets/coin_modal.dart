@@ -373,9 +373,19 @@ class _CoinModalState extends State<CoinModal> {
   }
 
   String _getTypeDisplayName(String type) {
+    if (type == 'mission_참가') {
+      return '미션 참가';
+    }
     if (type.startsWith('mission_')) {
       return '미션 완료 보상';
-    } else if (type == '댓글 채택') {
+    }
+    if (type == 'giftcard_purchase') {
+      return '기프티콘 구매';
+    }
+    if (type == 'item_장작') {
+      return '장작 사용';
+    }
+    if (type == '댓글 채택') {
       return '댓글 채택';
     }
     return type;
