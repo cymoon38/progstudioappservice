@@ -136,7 +136,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             type: _post!.type,
             originalPostId: _post!.originalPostId,
             isPopular: _post!.isPopular,
+            popularDate: _post!.popularDate,
+            popularRewarded: _post!.popularRewarded,
             coins: _post!.coins,
+            sortTime: _post!.sortTime,
+            charcoalUsedAt: _post!.charcoalUsedAt,
+            charcoalFixedUntil: _post!.charcoalFixedUntil,
+            charcoalAdoptionDone: _post!.charcoalAdoptionDone,
+            coalUsedAt: _post!.coalUsedAt,
+            coalFixedUntil: _post!.coalFixedUntil,
+            coalAdoptionDone: _post!.coalAdoptionDone,
           );
         });
       }
@@ -342,7 +351,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           type: _post!.type,
           originalPostId: _post!.originalPostId,
           isPopular: _post!.isPopular,
+          popularDate: _post!.popularDate,
+          popularRewarded: _post!.popularRewarded,
           coins: _post!.coins,
+          sortTime: _post!.sortTime,
+          charcoalUsedAt: _post!.charcoalUsedAt,
+          charcoalFixedUntil: _post!.charcoalFixedUntil,
+          charcoalAdoptionDone: _post!.charcoalAdoptionDone,
+          coalUsedAt: _post!.coalUsedAt,
+          coalFixedUntil: _post!.coalFixedUntil,
+          coalAdoptionDone: _post!.coalAdoptionDone,
         );
       }
     });
@@ -422,7 +440,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               type: _post!.type,
               originalPostId: _post!.originalPostId,
               isPopular: _post!.isPopular,
+              popularDate: _post!.popularDate,
+              popularRewarded: _post!.popularRewarded,
               coins: _post!.coins,
+              sortTime: _post!.sortTime,
+              charcoalUsedAt: _post!.charcoalUsedAt,
+              charcoalFixedUntil: _post!.charcoalFixedUntil,
+              charcoalAdoptionDone: _post!.charcoalAdoptionDone,
+              coalUsedAt: _post!.coalUsedAt,
+              coalFixedUntil: _post!.coalFixedUntil,
+              coalAdoptionDone: _post!.coalAdoptionDone,
             );
       }
     });
@@ -545,6 +572,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             children: [
               // 헤더 (공지글이 아닌 경우에만 표시) - 여백 없음
               if (post.type != 'notice') ...[
+                if (post.charcoalUsedAt != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Text(
+                      '댓글 작성자 중 무조건 한 명이 50코인에 채택됩니다',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.primaryColor,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                if (post.coalUsedAt != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Text(
+                      '댓글 작성자 중 무조건 한 명이 300코인에 채택됩니다',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.primaryColor,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: Row(

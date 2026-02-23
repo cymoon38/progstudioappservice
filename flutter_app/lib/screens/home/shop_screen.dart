@@ -4,6 +4,7 @@ import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
@@ -11,7 +12,6 @@ import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
 import '../post_detail_screen.dart';
 import 'giftcard_detail_screen.dart';
-import 'package:intl/intl.dart';
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
@@ -178,14 +178,28 @@ class _ShopScreenState extends State<ShopScreen> {
             name: '장작',
             price: 30,
             description: '게시물을 피드 상단으로 이동시킵니다',
-            onUse: () => _openSelectPostForItem(context),
+            onUse: () => _openSelectPostForItem(context, '장작', 30),
+          ),
+          const SizedBox(height: 16),
+          _ItemCard(
+            name: '목탄',
+            price: 100,
+            description: '게시물을 피드 상단에 1시간 고정시킵니다. 100% 채택 기능(50코인)이 추가됩니다.',
+            onUse: () => _openSelectPostForItem(context, '목탄', 100),
+          ),
+          const SizedBox(height: 16),
+          _ItemCard(
+            name: '석탄',
+            price: 500,
+            description: '게시물을 피드 상단에 3시간 고정시킵니다. 100% 채택 기능(300코인)이 추가됩니다.',
+            onUse: () => _openSelectPostForItem(context, '석탄', 500),
           ),
         ],
       ),
     );
   }
 
-  void _openSelectPostForItem(BuildContext context) async {
+  void _openSelectPostForItem(BuildContext context, String itemName, int itemCost) async {
     final authService = Provider.of<AuthService>(context, listen: false);
     if (authService.user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -206,24 +220,23 @@ class _ShopScreenState extends State<ShopScreen> {
       MaterialPageRoute<void>(
         builder: (context) => _SelectPostForItemScreen(
           posts: myPosts,
-          itemName: '장작',
-          itemCost: 30,
+          itemName: itemName,
+          itemCost: itemCost,
           onSelected: (postId) async {
             final ok = await dataService.useItemOnPost(
               userId: authService.user!.uid,
               postId: postId,
-              itemId: '장작',
-              cost: 30,
+              itemId: itemName,
+              cost: itemCost,
             );
             if (!context.mounted) return;
-            Navigator.of(context).pop();
             if (ok) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('장작을 사용했습니다. 게시물이 피드 상단으로 올라갑니다.')),
+                SnackBar(content: Text('$itemName을(를) 사용했습니다. 게시물이 피드 상단으로 올라갑니다.')),
               );
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('30코인이 부족하거나 사용에 실패했습니다.'), backgroundColor: Colors.red),
+                SnackBar(content: Text('${itemCost}코인이 부족하거나 사용에 실패했습니다.'), backgroundColor: Colors.red),
               );
             }
           },
@@ -462,7 +475,10 @@ class _SelectPostForItemScreen extends StatelessWidget {
                               ],
                             ),
                           );
-                          if (confirm == true) onSelected(post.id);
+                          if (confirm == true) {
+                            Navigator.of(context).pop(); // 아이템 사용 게시물 선택 페이지 닫기
+                            onSelected(post.id);
+                          }
                         },
                         borderRadius: BorderRadius.circular(8),
                         child: Column(

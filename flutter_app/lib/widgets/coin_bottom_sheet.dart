@@ -171,9 +171,11 @@ class _CoinBottomSheetState extends State<CoinBottomSheet> {
     if (type == 'giftcard_purchase') {
       return '기프티콘 구매';
     }
-    if (type == 'item_장작') {
-      return '장작 사용';
-    }
+    if (type == 'item_장작') return '장작 사용';
+    if (type == 'item_목탄') return '목탄 사용';
+    if (type == 'item_석탄') return '석탄 사용';
+    if (type == '목탄 댓글 채택') return '목탄 댓글 채택';
+    if (type == '석탄 댓글 채택') return '석탄 댓글 채택';
     if (type == '댓글 채택') {
       return '댓글 채택';
     }

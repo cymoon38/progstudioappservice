@@ -25,9 +25,202 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<DataService>(context, listen: false).getAllPosts();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final dataService = Provider.of<DataService>(context, listen: false);
+      await dataService.getAllPosts();
+      if (!mounted) return;
+      await _checkCharcoalAdoptionDialog(context);
+      if (!mounted) return;
+      await _checkCoalAdoptionDialog(context);
     });
+  }
+
+  /// 목탄 사용 후 24h~48h: 댓글 채택 다이얼로그(50코인), 48h 경과: 랜덤 채택
+  Future<void> _checkCharcoalAdoptionDialog(BuildContext context) async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final dataService = Provider.of<DataService>(context, listen: false);
+    if (authService.user == null) return;
+    final uid = authService.user!.uid;
+    final pending = await dataService.getPostsPendingCharcoalAdoption(uid);
+    if (pending.isEmpty) return;
+    final now = DateTime.now();
+    for (final post in pending) {
+      final usedAt = post.charcoalUsedAt!;
+      final diff = now.difference(usedAt);
+      if (diff.inHours >= 48) {
+        await dataService.doRandomCharcoalAdoption(post.id, post.authorUid ?? uid);
+        if (!mounted) return;
+      }
+    }
+    final again = await dataService.getPostsPendingCharcoalAdoption(uid);
+    final toShow = again.where((p) {
+      final d = now.difference(p.charcoalUsedAt!);
+      return d.inHours >= 24 && d.inHours < 48;
+    }).toList();
+    if (toShow.isEmpty || !mounted) return;
+    final post = toShow.first;
+    final freshPost = await dataService.getPost(post.id);
+    if (freshPost == null || !mounted) return;
+    final adoptable = dataService.getAdoptableCommentsForCharcoal(freshPost, freshPost.authorUid ?? uid);
+    if (adoptable.isEmpty) {
+      await dataService.doRandomCharcoalAdoption(post.id, post.authorUid ?? uid);
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('댓글 채택하기'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '목탄을 사용한 게시물 "${post.title}"의 댓글 중 한 명을 50코인으로 채택해 주세요.',
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              ...adoptable.map((item) {
+                final text = item['text'] as String;
+                final preview = text.length > 20 ? '${text.substring(0, 20)}...' : text;
+                return ListTile(
+                  title: Text('${item['author']}'),
+                  subtitle: Text(preview),
+                  dense: true,
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final replyPath = item['replyPath'] as List<int>?;
+                    try {
+                      await dataService.acceptCommentCharcoal(
+                        postId: post.id,
+                        commentId: item['commentId'] as String,
+                        commentAuthorUsername: item['author'] as String,
+                        postAuthorUid: freshPost.authorUid ?? uid,
+                        commentIndex: item['commentIndex'] as int,
+                        replyPath: replyPath != null && replyPath.isNotEmpty ? replyPath : null,
+                      );
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('댓글을 50코인으로 채택했습니다.')),
+                        );
+                      }
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('채택 실패: $e'), backgroundColor: Colors.red),
+                        );
+                      }
+                    }
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('나중에'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 석탄 사용 후 24h~48h: 댓글 채택 다이얼로그(300코인), 48h 경과: 랜덤 채택
+  Future<void> _checkCoalAdoptionDialog(BuildContext context) async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final dataService = Provider.of<DataService>(context, listen: false);
+    if (authService.user == null) return;
+    final uid = authService.user!.uid;
+    final pending = await dataService.getPostsPendingCoalAdoption(uid);
+    if (pending.isEmpty) return;
+    final now = DateTime.now();
+    for (final post in pending) {
+      final usedAt = post.coalUsedAt!;
+      final diff = now.difference(usedAt);
+      if (diff.inHours >= 48) {
+        await dataService.doRandomCoalAdoption(post.id, post.authorUid ?? uid);
+        if (!mounted) return;
+      }
+    }
+    final again = await dataService.getPostsPendingCoalAdoption(uid);
+    final toShow = again.where((p) {
+      final d = now.difference(p.coalUsedAt!);
+      return d.inHours >= 24 && d.inHours < 48;
+    }).toList();
+    if (toShow.isEmpty || !mounted) return;
+    final post = toShow.first;
+    final freshPost = await dataService.getPost(post.id);
+    if (freshPost == null || !mounted) return;
+    final adoptable = dataService.getAdoptableCommentsForCharcoal(freshPost, freshPost.authorUid ?? uid);
+    if (adoptable.isEmpty) {
+      await dataService.doRandomCoalAdoption(post.id, post.authorUid ?? uid);
+      return;
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('댓글 채택하기'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '석탄을 사용한 게시물 "${post.title}"의 댓글 중 한 명을 300코인으로 채택해 주세요.',
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              ...adoptable.map((item) {
+                final text = item['text'] as String;
+                final preview = text.length > 20 ? '${text.substring(0, 20)}...' : text;
+                return ListTile(
+                  title: Text('${item['author']}'),
+                  subtitle: Text(preview),
+                  dense: true,
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final replyPath = item['replyPath'] as List<int>?;
+                    try {
+                      await dataService.acceptCommentCoal(
+                        postId: post.id,
+                        commentId: item['commentId'] as String,
+                        commentAuthorUsername: item['author'] as String,
+                        postAuthorUid: freshPost.authorUid ?? uid,
+                        commentIndex: item['commentIndex'] as int,
+                        replyPath: replyPath != null && replyPath.isNotEmpty ? replyPath : null,
+                      );
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('댓글을 300코인으로 채택했습니다.')),
+                        );
+                      }
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text('채택 실패: $e'), backgroundColor: Colors.red),
+                        );
+                      }
+                    }
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('나중에'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -661,16 +854,35 @@ class _PostCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (post.isPopular)
-                    Image.asset(
-                      'assets/icons/star.png',
-                      width: 24,
-                      height: 24,
-                      errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.star,
-                        color: Colors.amber,
-                        size: 24,
-                      ),
+                  // 목탄/석탄 사용 시 100%채택 문구, 인기작품이면 불꽃은 그 아래 표시
+                  if (post.charcoalUsedAt != null || post.coalUsedAt != null || post.isPopular)
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (post.charcoalUsedAt != null || post.coalUsedAt != null)
+                          Text(
+                            '100%채택',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                        if (post.isPopular) ...[
+                          if (post.charcoalUsedAt != null) const SizedBox(height: 4),
+                          Image.asset(
+                            'assets/icons/star.png',
+                            width: 24,
+                            height: 24,
+                            errorBuilder: (context, error, stackTrace) => const Icon(
+                              Icons.star,
+                              color: Colors.amber,
+                              size: 24,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                 ],
               ),

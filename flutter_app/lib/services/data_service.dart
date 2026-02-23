@@ -33,6 +33,18 @@ class Post {
   final int? coins;
   /// 끌올(장작 등) 시 갱신. 정렬 시 sortTime ?? date 사용.
   final DateTime? sortTime;
+  /// 목탄 사용 시각. 있으면 1시간 동안 상단 고정, 100%채택 문구 표시, 24h 후 댓글 채택 가능.
+  final DateTime? charcoalUsedAt;
+  /// 목탄 사용 후 상단 고정 종료 시각 (charcoalUsedAt + 1시간).
+  final DateTime? charcoalFixedUntil;
+  /// 목탄 24h 댓글 채택 완료 여부.
+  final bool charcoalAdoptionDone;
+  /// 석탄 사용 시각. 있으면 3시간 동안 상단 고정, 100%채택 문구, 24h 후 댓글 채택(300코인).
+  final DateTime? coalUsedAt;
+  /// 석탄 사용 후 상단 고정 종료 시각 (coalUsedAt + 3시간).
+  final DateTime? coalFixedUntil;
+  /// 석탄 24h 댓글 채택 완료 여부.
+  final bool coalAdoptionDone;
 
   Post({
     required this.id,
@@ -55,6 +67,12 @@ class Post {
     this.popularRewarded = false,
     this.coins,
     this.sortTime,
+    this.charcoalUsedAt,
+    this.charcoalFixedUntil,
+    this.charcoalAdoptionDone = false,
+    this.coalUsedAt,
+    this.coalFixedUntil,
+    this.coalAdoptionDone = false,
   });
 
   // 대댓글을 포함한 총 댓글 수 계산
@@ -106,6 +124,12 @@ class Post {
       popularRewarded: data['popularRewarded'] ?? false,
       coins: data['coins'],
       sortTime: (data['sortTime'] as Timestamp?)?.toDate(),
+      charcoalUsedAt: (data['charcoalUsedAt'] as Timestamp?)?.toDate(),
+      charcoalFixedUntil: (data['charcoalFixedUntil'] as Timestamp?)?.toDate(),
+      charcoalAdoptionDone: data['charcoalAdoptionDone'] ?? false,
+      coalUsedAt: (data['coalUsedAt'] as Timestamp?)?.toDate(),
+      coalFixedUntil: (data['coalFixedUntil'] as Timestamp?)?.toDate(),
+      coalAdoptionDone: data['coalAdoptionDone'] ?? false,
     );
   }
 }
@@ -119,6 +143,8 @@ class Comment {
   final List<Comment> replies;
   final bool isAccepted;
   final int? acceptedCoinAmount;
+  /// 목탄 24h 댓글 채택으로 채택된 경우 (3명 제한에 포함되지 않음)
+  final bool isCharcoalAdopted;
 
   Comment({
     required this.id,
@@ -129,6 +155,7 @@ class Comment {
     required this.replies,
     this.isAccepted = false,
     this.acceptedCoinAmount,
+    this.isCharcoalAdopted = false,
   });
 
   factory Comment.fromMap(Map<String, dynamic> map) {
@@ -143,6 +170,7 @@ class Comment {
           .toList() ?? [],
       isAccepted: map['isAccepted'] ?? false,
       acceptedCoinAmount: map['acceptedCoinAmount'],
+      isCharcoalAdopted: map['isCharcoalAdopted'] ?? false,
     );
   }
 }
@@ -359,8 +387,24 @@ class DataService extends ChangeNotifier {
           .map((doc) => Post.fromFirestore(doc))
           .where((post) => post.type != 'notice')
           .toList();
-      // 끌올(장작) 반영: sortTime 기준으로 상단 노출, 없으면 date
-      _posts.sort((a, b) => (b.sortTime ?? b.date).compareTo(a.sortTime ?? a.date));
+      // 끌올(장작/목탄/석탄) 반영: 목탄 1시간·석탄 3시간 고정 → sortTime 기준 상단 노출
+      final now = DateTime.now();
+      DateTime? effectiveFixedUntil(Post p) {
+        DateTime? later;
+        if (p.charcoalFixedUntil != null && p.charcoalFixedUntil!.isAfter(now)) later = p.charcoalFixedUntil;
+        if (p.coalFixedUntil != null && p.coalFixedUntil!.isAfter(now)) {
+          if (later == null || p.coalFixedUntil!.isAfter(later)) later = p.coalFixedUntil;
+        }
+        return later;
+      }
+      _posts.sort((a, b) {
+        final aFixed = effectiveFixedUntil(a) != null;
+        final bFixed = effectiveFixedUntil(b) != null;
+        if (aFixed && !bFixed) return -1;
+        if (!aFixed && bFixed) return 1;
+        if (aFixed && bFixed) return (effectiveFixedUntil(b)!).compareTo(effectiveFixedUntil(a)!);
+        return (b.sortTime ?? b.date).compareTo(a.sortTime ?? a.date);
+      });
       notifyListeners();
       return _posts;
     } catch (e) {
@@ -398,7 +442,8 @@ class DataService extends ChangeNotifier {
     }
   }
 
-  /// 장작 아이템 사용: 해당 게시물을 피드 상단으로 끌올. 30코인 차감. 본인 게시물만 가능.
+  /// 장작/목탄 아이템 사용: 해당 게시물을 피드 상단으로 끌올. 본인 게시물만 가능.
+  /// 목탄: 100코인, 1시간 상단 고정 + 24h 후 댓글 채택 가능.
   Future<bool> useItemOnPost({
     required String userId,
     required String postId,
@@ -428,8 +473,19 @@ class DataService extends ChangeNotifier {
         return false;
       }
       await addCoins(userId: userId, amount: -cost, type: 'item_$itemId');
-      await postRef.update({'sortTime': FieldValue.serverTimestamp()});
-      debugPrint('✅ [useItemOnPost] 장작 사용 완료: postId=$postId');
+      final Map<String, dynamic> updateData = {'sortTime': FieldValue.serverTimestamp()};
+      final now = DateTime.now();
+      if (itemId == '목탄') {
+        updateData['charcoalUsedAt'] = Timestamp.fromDate(now);
+        updateData['charcoalFixedUntil'] = Timestamp.fromDate(now.add(const Duration(hours: 1)));
+        updateData['charcoalAdoptionDone'] = false;
+      } else if (itemId == '석탄') {
+        updateData['coalUsedAt'] = Timestamp.fromDate(now);
+        updateData['coalFixedUntil'] = Timestamp.fromDate(now.add(const Duration(hours: 3)));
+        updateData['coalAdoptionDone'] = false;
+      }
+      await postRef.update(updateData);
+      debugPrint('✅ [useItemOnPost] $itemId 사용 완료: postId=$postId');
       await getAllPosts();
       return true;
     } catch (e) {
@@ -895,6 +951,12 @@ class DataService extends ChangeNotifier {
         popularRewarded: post.popularRewarded,
         coins: post.coins,
         sortTime: post.sortTime,
+        charcoalUsedAt: post.charcoalUsedAt,
+        charcoalFixedUntil: post.charcoalFixedUntil,
+        charcoalAdoptionDone: post.charcoalAdoptionDone,
+        coalUsedAt: post.coalUsedAt,
+        coalFixedUntil: post.coalFixedUntil,
+        coalAdoptionDone: post.coalAdoptionDone,
       );
       
       // 로컬 리스트 업데이트
@@ -977,6 +1039,12 @@ class DataService extends ChangeNotifier {
             originalPostId: updatedPost.originalPostId,
             isPopular: true,
             popularDate: popularDate,
+            charcoalUsedAt: updatedPost.charcoalUsedAt,
+            charcoalFixedUntil: updatedPost.charcoalFixedUntil,
+            charcoalAdoptionDone: updatedPost.charcoalAdoptionDone,
+            coalUsedAt: updatedPost.coalUsedAt,
+            coalFixedUntil: updatedPost.coalFixedUntil,
+            coalAdoptionDone: updatedPost.coalAdoptionDone,
             popularRewarded: true,
             coins: updatedPost.coins,
             sortTime: updatedPost.sortTime,
@@ -1550,9 +1618,9 @@ class DataService extends ChangeNotifier {
         throw Exception('게시물을 찾을 수 없습니다.');
       }
 
-      // 이미 채택된 댓글/대댓글 수 확인 (최대 3명까지) - 재귀적으로 모든 댓글과 대댓글 확인
+      // 이미 채택된 댓글/대댓글 수 확인 (최대 3명까지, 목탄 채택 제외) - 재귀적으로 모든 댓글과 대댓글 확인
       int countAccepted(Comment comment) {
-        int count = comment.isAccepted ? 1 : 0;
+        int count = (comment.isAccepted && !comment.isCharcoalAdopted) ? 1 : 0;
         for (final reply in comment.replies) {
           count += countAccepted(reply);
         }
@@ -1582,6 +1650,7 @@ class DataService extends ChangeNotifier {
             'replies': comment.replies.map((r) => commentToMap(r)).toList(),
             'isAccepted': comment.isAccepted,
             if (comment.acceptedCoinAmount != null) 'acceptedCoinAmount': comment.acceptedCoinAmount,
+            'isCharcoalAdopted': comment.isCharcoalAdopted,
           };
         } else {
           // 댓글인 경우
@@ -1596,6 +1665,7 @@ class DataService extends ChangeNotifier {
             if (comment.id == commentId) 'acceptedCoinAmount': coinAmount,
             if (comment.id != commentId && comment.acceptedCoinAmount != null)
               'acceptedCoinAmount': comment.acceptedCoinAmount,
+            'isCharcoalAdopted': comment.isCharcoalAdopted,
           };
         }
       }
@@ -1613,6 +1683,7 @@ class DataService extends ChangeNotifier {
             'replies': reply.replies.map((r) => replyToMap(r, path, currentIndex)).toList(),
             'isAccepted': true,
             'acceptedCoinAmount': coinAmount,
+            'isCharcoalAdopted': reply.isCharcoalAdopted,
           };
         } else {
           // 일반 대댓글
@@ -1632,6 +1703,7 @@ class DataService extends ChangeNotifier {
             }).toList(),
             'isAccepted': reply.isAccepted,
             if (reply.acceptedCoinAmount != null) 'acceptedCoinAmount': reply.acceptedCoinAmount,
+            'isCharcoalAdopted': reply.isCharcoalAdopted,
           };
         }
       }
@@ -1660,6 +1732,7 @@ class DataService extends ChangeNotifier {
               }).toList(),
               'isAccepted': comment.isAccepted,
               if (comment.acceptedCoinAmount != null) 'acceptedCoinAmount': comment.acceptedCoinAmount,
+              'isCharcoalAdopted': comment.isCharcoalAdopted,
             };
           } else {
             return commentToMap(comment);
@@ -1729,6 +1802,296 @@ class DataService extends ChangeNotifier {
       debugPrint('댓글 채택 오류: $e');
       rethrow;
     }
+  }
+
+  /// 목탄 24h 댓글 채택: 선택한 댓글/대댓글 작성자에게 50코인 지급만 함.
+  /// 채택한 유저(게시물 작성자)에게서는 코인 차감 없음. 3명 제한에 포함되지 않음.
+  Future<void> acceptCommentCharcoal({
+    required String postId,
+    required String commentId,
+    required String commentAuthorUsername,
+    required String postAuthorUid,
+    int? commentIndex,
+    List<int>? replyPath,
+  }) async {
+    const int coinAmount = 50;
+    try {
+      final commentAuthorUid = await getUserIdByUsername(commentAuthorUsername);
+      if (commentAuthorUid == null) throw Exception('댓글 작성자를 찾을 수 없습니다.');
+      if (commentAuthorUid == postAuthorUid) throw Exception('본인의 댓글은 채택할 수 없습니다.');
+
+      final post = await getPost(postId);
+      if (post == null) throw Exception('게시물을 찾을 수 없습니다.');
+      if (post.charcoalUsedAt == null) throw Exception('목탄을 사용한 게시물이 아닙니다.');
+      if (post.charcoalAdoptionDone) throw Exception('이미 목탄 댓글 채택이 완료되었습니다.');
+      if (commentAuthorUsername == post.author) throw Exception('본인의 댓글은 채택할 수 없습니다.');
+
+      Map<String, dynamic> replyToMap(Comment reply, List<int> path, int currentIndex) {
+        if (path.length == 1 && path[0] == currentIndex) {
+          return {
+            'id': reply.id, 'author': reply.author, 'authorUid': reply.authorUid,
+            'text': reply.text, 'createdAt': Timestamp.fromDate(reply.createdAt),
+            'replies': reply.replies.map((r) => replyToMap(r, path, currentIndex)).toList(),
+            'isAccepted': true, 'acceptedCoinAmount': coinAmount, 'isCharcoalAdopted': true,
+          };
+        }
+        return {
+          'id': reply.id, 'author': reply.author, 'authorUid': reply.authorUid,
+          'text': reply.text, 'createdAt': Timestamp.fromDate(reply.createdAt),
+          'replies': reply.replies.asMap().entries.map((e) => replyToMap(e.value, path.length > 1 && path[0] == currentIndex ? path.sublist(1) : path, e.key)).toList(),
+          'isAccepted': reply.isAccepted, if (reply.acceptedCoinAmount != null) 'acceptedCoinAmount': reply.acceptedCoinAmount, 'isCharcoalAdopted': reply.isCharcoalAdopted,
+        };
+      }
+
+      Map<String, dynamic> commentToMap(Comment comment) {
+        if (replyPath != null && replyPath.isNotEmpty && commentIndex != null) {
+          return {
+            'id': comment.id, 'author': comment.author, 'authorUid': comment.authorUid,
+            'text': comment.text, 'createdAt': Timestamp.fromDate(comment.createdAt),
+            'replies': comment.replies.asMap().entries.map((e) => replyToMap(e.value, replyPath, e.key)).toList(),
+            'isAccepted': comment.isAccepted, if (comment.acceptedCoinAmount != null) 'acceptedCoinAmount': comment.acceptedCoinAmount, 'isCharcoalAdopted': comment.isCharcoalAdopted,
+          };
+        }
+        return {
+          'id': comment.id, 'author': comment.author, 'authorUid': comment.authorUid,
+          'text': comment.text, 'createdAt': Timestamp.fromDate(comment.createdAt),
+          'replies': comment.replies.map((r) => replyToMap(r, replyPath ?? [], 0)).toList(),
+          'isAccepted': comment.id == commentId, if (comment.id == commentId) 'acceptedCoinAmount': coinAmount, 'isCharcoalAdopted': comment.id == commentId,
+          if (comment.id != commentId && comment.acceptedCoinAmount != null) 'acceptedCoinAmount': comment.acceptedCoinAmount,
+        };
+      }
+
+      List<Map<String, dynamic>> comments;
+      if (replyPath != null && replyPath.isNotEmpty && commentIndex != null) {
+        comments = post.comments.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final comment = entry.value;
+          if (idx == commentIndex) {
+            return {
+              'id': comment.id, 'author': comment.author, 'authorUid': comment.authorUid,
+              'text': comment.text, 'createdAt': Timestamp.fromDate(comment.createdAt),
+              'replies': comment.replies.asMap().entries.map((e) => replyToMap(e.value, replyPath, e.key)).toList(),
+              'isAccepted': comment.isAccepted, if (comment.acceptedCoinAmount != null) 'acceptedCoinAmount': comment.acceptedCoinAmount, 'isCharcoalAdopted': comment.isCharcoalAdopted,
+            };
+          }
+          return commentToMap(comment);
+        }).toList();
+      } else {
+        comments = post.comments.map((c) => commentToMap(c)).toList();
+      }
+
+      final postRef = _firestore.collection('posts').doc(postId);
+      await postRef.update({'comments': comments, 'charcoalAdoptionDone': true});
+
+      await addCoins(userId: commentAuthorUid, amount: coinAmount, type: '목탄 댓글 채택', postId: postId);
+
+      await _firestore.collection('notifications').add({
+        'userId': commentAuthorUid,
+        'type': 'comment_adopted',
+        'postId': postId,
+        'postTitle': post.title,
+        'author': post.author,
+        'createdAt': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+
+      final postIndex = _posts.indexWhere((p) => p.id == postId);
+      if (postIndex != -1) {
+        final updatedPost = await getPost(postId);
+        if (updatedPost != null) {
+          _posts[postIndex] = updatedPost;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('목탄 댓글 채택 오류: $e');
+      rethrow;
+    }
+  }
+
+  /// 석탄 24h 댓글 채택: 선택한 댓글/대댓글 작성자에게 300코인 지급. 3명 제한에 포함되지 않음.
+  Future<void> acceptCommentCoal({
+    required String postId,
+    required String commentId,
+    required String commentAuthorUsername,
+    required String postAuthorUid,
+    int? commentIndex,
+    List<int>? replyPath,
+  }) async {
+    const int coinAmount = 300;
+    try {
+      final commentAuthorUid = await getUserIdByUsername(commentAuthorUsername);
+      if (commentAuthorUid == null) throw Exception('댓글 작성자를 찾을 수 없습니다.');
+      if (commentAuthorUid == postAuthorUid) throw Exception('본인의 댓글은 채택할 수 없습니다.');
+
+      final post = await getPost(postId);
+      if (post == null) throw Exception('게시물을 찾을 수 없습니다.');
+      if (post.coalUsedAt == null) throw Exception('석탄을 사용한 게시물이 아닙니다.');
+      if (post.coalAdoptionDone) throw Exception('이미 석탄 댓글 채택이 완료되었습니다.');
+      if (commentAuthorUsername == post.author) throw Exception('본인의 댓글은 채택할 수 없습니다.');
+
+      Map<String, dynamic> replyToMap(Comment reply, List<int> path, int currentIndex) {
+        if (path.length == 1 && path[0] == currentIndex) {
+          return {
+            'id': reply.id, 'author': reply.author, 'authorUid': reply.authorUid,
+            'text': reply.text, 'createdAt': Timestamp.fromDate(reply.createdAt),
+            'replies': reply.replies.map((r) => replyToMap(r, path, currentIndex)).toList(),
+            'isAccepted': true, 'acceptedCoinAmount': coinAmount, 'isCharcoalAdopted': true,
+          };
+        }
+        return {
+          'id': reply.id, 'author': reply.author, 'authorUid': reply.authorUid,
+          'text': reply.text, 'createdAt': Timestamp.fromDate(reply.createdAt),
+          'replies': reply.replies.asMap().entries.map((e) => replyToMap(e.value, path.length > 1 && path[0] == currentIndex ? path.sublist(1) : path, e.key)).toList(),
+          'isAccepted': reply.isAccepted, if (reply.acceptedCoinAmount != null) 'acceptedCoinAmount': reply.acceptedCoinAmount, 'isCharcoalAdopted': reply.isCharcoalAdopted,
+        };
+      }
+
+      Map<String, dynamic> commentToMap(Comment comment) {
+        if (replyPath != null && replyPath.isNotEmpty && commentIndex != null) {
+          return {
+            'id': comment.id, 'author': comment.author, 'authorUid': comment.authorUid,
+            'text': comment.text, 'createdAt': Timestamp.fromDate(comment.createdAt),
+            'replies': comment.replies.asMap().entries.map((e) => replyToMap(e.value, replyPath, e.key)).toList(),
+            'isAccepted': comment.isAccepted, if (comment.acceptedCoinAmount != null) 'acceptedCoinAmount': comment.acceptedCoinAmount, 'isCharcoalAdopted': comment.isCharcoalAdopted,
+          };
+        }
+        return {
+          'id': comment.id, 'author': comment.author, 'authorUid': comment.authorUid,
+          'text': comment.text, 'createdAt': Timestamp.fromDate(comment.createdAt),
+          'replies': comment.replies.map((r) => replyToMap(r, replyPath ?? [], 0)).toList(),
+          'isAccepted': comment.id == commentId, if (comment.id == commentId) 'acceptedCoinAmount': coinAmount, 'isCharcoalAdopted': comment.id == commentId,
+          if (comment.id != commentId && comment.acceptedCoinAmount != null) 'acceptedCoinAmount': comment.acceptedCoinAmount,
+        };
+      }
+
+      List<Map<String, dynamic>> comments;
+      if (replyPath != null && replyPath.isNotEmpty && commentIndex != null) {
+        comments = post.comments.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final comment = entry.value;
+          if (idx == commentIndex) {
+            return {
+              'id': comment.id, 'author': comment.author, 'authorUid': comment.authorUid,
+              'text': comment.text, 'createdAt': Timestamp.fromDate(comment.createdAt),
+              'replies': comment.replies.asMap().entries.map((e) => replyToMap(e.value, replyPath, e.key)).toList(),
+              'isAccepted': comment.isAccepted, if (comment.acceptedCoinAmount != null) 'acceptedCoinAmount': comment.acceptedCoinAmount, 'isCharcoalAdopted': comment.isCharcoalAdopted,
+            };
+          }
+          return commentToMap(comment);
+        }).toList();
+      } else {
+        comments = post.comments.map((c) => commentToMap(c)).toList();
+      }
+
+      final postRef = _firestore.collection('posts').doc(postId);
+      await postRef.update({'comments': comments, 'coalAdoptionDone': true});
+
+      await addCoins(userId: commentAuthorUid, amount: coinAmount, type: '석탄 댓글 채택', postId: postId);
+
+      await _firestore.collection('notifications').add({
+        'userId': commentAuthorUid,
+        'type': 'comment_adopted',
+        'postId': postId,
+        'postTitle': post.title,
+        'author': post.author,
+        'createdAt': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+
+      final postIndex = _posts.indexWhere((p) => p.id == postId);
+      if (postIndex != -1) {
+        final updatedPost = await getPost(postId);
+        if (updatedPost != null) {
+          _posts[postIndex] = updatedPost;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      debugPrint('석탄 댓글 채택 오류: $e');
+      rethrow;
+    }
+  }
+
+  /// 목탄 사용 후 24h~48h 대기 중인 게시물 (작성자 UID로 필터)
+  Future<List<Post>> getPostsPendingCharcoalAdoption(String authorUid) async {
+    final myPosts = await getMyPosts(authorUid, limit: 100);
+    return myPosts.where((p) => p.charcoalUsedAt != null && !p.charcoalAdoptionDone).toList();
+  }
+
+  /// 석탄 사용 후 24h~48h 대기 중인 게시물 (작성자 UID로 필터)
+  Future<List<Post>> getPostsPendingCoalAdoption(String authorUid) async {
+    final myPosts = await getMyPosts(authorUid, limit: 100);
+    return myPosts.where((p) => p.coalUsedAt != null && !p.coalAdoptionDone).toList();
+  }
+
+  /// 채택 가능한 댓글/대댓글 목록 (작성자 본인·이미 채택된 것 제외). 목탄 24h 채택·랜덤 채택용.
+  List<Map<String, dynamic>> getAdoptableCommentsForCharcoal(Post post, String postAuthorUid) {
+    final List<Map<String, dynamic>> out = [];
+    final postAuthorName = post.author;
+    void addComment(Comment c, int commentIndex, List<int>? replyPath, String rootCommentId) {
+      // 본인 댓글/대댓글 제외 (UID 또는 작성자명으로 비교, 구 댓글은 author만 있을 수 있음)
+      if (c.authorUid == postAuthorUid || c.author == postAuthorName) return;
+      if (c.isAccepted && c.isCharcoalAdopted) return;
+      out.add({
+        'commentId': rootCommentId,
+        'commentIndex': commentIndex,
+        'replyPath': replyPath,
+        'author': c.author,
+        'text': c.text,
+      });
+      for (int i = 0; i < c.replies.length; i++) {
+        addComment(c.replies[i], commentIndex, [...(replyPath ?? []), i], rootCommentId);
+      }
+    }
+    for (int i = 0; i < post.comments.length; i++) {
+      addComment(post.comments[i], i, null, post.comments[i].id);
+    }
+    return out;
+  }
+
+  /// 목탄 48h 경과 시 랜덤 채택
+  Future<bool> doRandomCharcoalAdoption(String postId, String postAuthorUid) async {
+    final post = await getPost(postId);
+    if (post == null || post.charcoalUsedAt == null || post.charcoalAdoptionDone) return false;
+    final adoptable = getAdoptableCommentsForCharcoal(post, postAuthorUid);
+    if (adoptable.isEmpty) {
+      await _firestore.collection('posts').doc(postId).update({'charcoalAdoptionDone': true});
+      return true;
+    }
+    final r = adoptable[DateTime.now().millisecondsSinceEpoch % adoptable.length];
+    final replyPath = r['replyPath'] as List<int>?;
+    await acceptCommentCharcoal(
+      postId: postId,
+      commentId: r['commentId'] as String,
+      commentAuthorUsername: r['author'] as String,
+      postAuthorUid: postAuthorUid,
+      commentIndex: r['commentIndex'] as int,
+      replyPath: replyPath != null && replyPath.isNotEmpty ? replyPath : null,
+    );
+    return true;
+  }
+
+  /// 석탄 48h 경과 시 랜덤 채택 (300코인)
+  Future<bool> doRandomCoalAdoption(String postId, String postAuthorUid) async {
+    final post = await getPost(postId);
+    if (post == null || post.coalUsedAt == null || post.coalAdoptionDone) return false;
+    final adoptable = getAdoptableCommentsForCharcoal(post, postAuthorUid);
+    if (adoptable.isEmpty) {
+      await _firestore.collection('posts').doc(postId).update({'coalAdoptionDone': true});
+      return true;
+    }
+    final r = adoptable[DateTime.now().millisecondsSinceEpoch % adoptable.length];
+    final replyPath = r['replyPath'] as List<int>?;
+    await acceptCommentCoal(
+      postId: postId,
+      commentId: r['commentId'] as String,
+      commentAuthorUsername: r['author'] as String,
+      postAuthorUid: postAuthorUid,
+      commentIndex: r['commentIndex'] as int,
+      replyPath: replyPath != null && replyPath.isNotEmpty ? replyPath : null,
+    );
+    return true;
   }
 
   // =========================
