@@ -388,6 +388,7 @@ class _CoinModalState extends State<CoinModal> {
     if (type == '목탄 댓글 채택') return '목탄 댓글 채택';
     if (type == '석탄 댓글 채택') return '석탄 댓글 채택';
     if (type == '댓글 채택') return '댓글 채택';
+    if (type == 'offerwall') return '캠페인 참여';
     return type;
   }
 }

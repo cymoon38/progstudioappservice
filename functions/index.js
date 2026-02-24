@@ -1,6 +1,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const axios = require('axios');
+const crypto = require('crypto');
 
 admin.initializeApp();
 
@@ -31,6 +32,12 @@ function getSecret(secretName) {
     // Firebase Console > Functions > 설정 > 환경 변수에서 GIFTSHOWBIZ_PHONE_NO 설정 가능
     // 또는 아래에 직접 전화번호를 하드코딩할 수 있습니다
     return process.env.GIFTSHOWBIZ_PHONE_NO || '01057049470'; // 고정 전화번호
+  }
+  if (secretName === 'ADPOPCORN_HASH_KEY') {
+    return process.env.ADPOPCORN_HASH_KEY || 'f0914cb6664e4991';
+  }
+  if (secretName === 'ADPOPCORN_HASH_KEY_STAGING') {
+    return process.env.ADPOPCORN_HASH_KEY_STAGING || process.env.ADPOPCORN_HASH_KEY || 'f0914cb6664e4991';
   }
   // 환경 변수에서 가져오기 (배포 시 설정)
   return process.env[secretName] || '';
@@ -140,6 +147,101 @@ async function addCoins(userId, amount, type, notificationMessage = null) {
     console.error(`❌ 코인 지급 오류: ${e}`);
     console.error(`❌ 코인 지급 오류 스택: ${e.stack}`);
     throw e;
+  }
+}
+
+// 애드팝콘 리워드 콜백 공통 처리 (스테이징/라이브)
+// GET 쿼리: usn, reward_key, quantity, campaign_key, signed_value (애드팝콘 기본 파라미터명)
+function buildAdpopcornResponse(result, resultCode, resultMsg) {
+  return { Result: result, ResultCode: resultCode, ResultMsg: resultMsg };
+}
+
+// 쿼리/바디에서 키 값 읽기 (대소문자·언더스코어 허용)
+function getParam(obj, ...keys) {
+  if (!obj || typeof obj !== 'object') return '';
+  for (const k of keys) {
+    const v = obj[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+
+async function processAdpopcornRewardCallback(query, isStaging) {
+  const tag = isStaging ? '[AdPopcorn Staging]' : '[AdPopcorn Live]';
+  console.log(`${tag} 수신 파라미터 키: ${Object.keys(query || {}).join(', ')}`);
+  const usn = getParam(query, 'usn', 'USN');
+  const rewardkey = getParam(query, 'reward_key', 'rewardkey');
+  const quantity = parseInt(String(query.quantity != null ? query.quantity : '0'), 10);
+  const campaignkey = getParam(query, 'campaign_key', 'campaignkey');
+  const signedValue = getParam(query, 'signed_value', 'SignedValue', 'signedValue');
+
+  if (!usn || !rewardkey) {
+    console.warn(`${tag} 필수 파라미터 없음: usn=${usn}, rewardkey=${rewardkey}`);
+    return buildAdpopcornResponse(false, 4000, 'missing required parameters');
+  }
+
+  const hashKey = isStaging ? getSecret('ADPOPCORN_HASH_KEY_STAGING') : getSecret('ADPOPCORN_HASH_KEY');
+  if (!hashKey) {
+    console.error(`${tag} HASH KEY 미설정. 환경 변수 ADPOPCORN_HASH_KEY${isStaging ? '_STAGING' : ''} 설정 필요`);
+    return buildAdpopcornResponse(false, 1100, 'invalid signed value');
+  }
+
+  // SignedValue 검증: 애드팝콘 plainText 형식 시도 (문서마다 순서 상이)
+  const receivedSigned = signedValue.toLowerCase();
+  const candidates = [
+    usn + rewardkey + campaignkey + String(quantity),           // usn, reward_key, campaign_key, quantity
+    usn + rewardkey + String(quantity) + campaignkey,           // usn, reward_key, quantity, campaign_key
+    usn + campaignkey + rewardkey + String(quantity),          // usn, campaign_key, reward_key, quantity
+    campaignkey + String(quantity) + rewardkey + usn,         // campaign_key, quantity, reward_key, usn (일부 문서)
+  ];
+  const expectedList = candidates.map((pt) =>
+    crypto.createHmac('md5', hashKey).update(pt).digest('hex').toLowerCase());
+  const match = expectedList.some((exp) => exp === receivedSigned);
+  if (!match) {
+    console.warn(`${tag} SignedValue 불일치 (received=${receivedSigned})`);
+    return buildAdpopcornResponse(false, 1100, 'invalid signed value');
+  }
+
+  // 리워드 중복 지급 방지
+  const rewardRef = db.collection('offerwallRewards').doc(rewardkey);
+  const rewardDoc = await rewardRef.get();
+  if (rewardDoc.exists) {
+    console.warn(`${tag} 중복 rewardkey: ${rewardkey}`);
+    return buildAdpopcornResponse(false, 3100, 'duplicate transaction');
+  }
+
+  // 유저 검증
+  const userRef = db.collection('users').doc(usn);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists) {
+    console.warn(`${tag} 존재하지 않는 유저: ${usn}`);
+    return buildAdpopcornResponse(false, 3200, 'invalid user');
+  }
+
+  if (quantity <= 0) {
+    console.warn(`${tag} quantity <= 0: ${quantity}`);
+    return buildAdpopcornResponse(false, 4000, 'invalid quantity');
+  }
+
+  try {
+    await addCoins(
+        usn,
+        quantity,
+        'offerwall',
+        `오퍼월 미션 완료로 ${quantity}코인이 지급되었습니다.`,
+    );
+    await rewardRef.set({
+      userId: usn,
+      quantity,
+      campaignkey,
+      isStaging,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log(`${tag} 리워드 지급 완료: usn=${usn}, quantity=${quantity}, rewardkey=${rewardkey}`);
+    return buildAdpopcornResponse(true, 1, 'success');
+  } catch (e) {
+    console.error(`${tag} 리워드 지급 실패:`, e);
+    return buildAdpopcornResponse(false, 4000, 'reward grant failed');
   }
 }
 
@@ -616,6 +718,8 @@ exports.syncGiftCardsDaily = functions
                                   goods.goodsTypeNm || 
                                   '';
               
+              // 검색용 키워드 (API의 srchKeyword, 쉼표로 구분된 검색어)
+              const srchKeyword = String(goods.srchKeyword || '');
               batch.set(
                 docRef,
                 {
@@ -635,6 +739,7 @@ exports.syncGiftCardsDaily = functions
                   categoryName1: String(categoryName),
                   category1Name: String(goods.category1Name || ''),
                   categoryName: String(goods.categoryName || ''),
+                  srchKeyword: srchKeyword,
                   lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
                 },
                 { merge: true }
@@ -993,6 +1098,52 @@ async function getBrandList(authCode, authToken) {
     };
   }
 }
+
+// GET/POST 모두에서 파라미터 수집 (테스트 도구가 POST body로 보낼 수 있음)
+function getAdpopcornParams(req) {
+  const query = req.query || {};
+  const body = req.body || {};
+  return { ...query, ...body };
+}
+
+// ----- 애드팝콘 오퍼월 리워드 콜백 (스테이징 / 라이브) -----
+// 애드팝콘 관리자 > 콜백 서버 설정 > 스테이징 서버 주소에 등록할 URL
+exports.adpopcornRewardCallbackStaging = functions.https.onRequest(async (req, res) => {
+  try {
+    const method = (req.method || '').toUpperCase();
+    if (method !== 'GET' && method !== 'POST') {
+      res.status(405).json(buildAdpopcornResponse(false, 4000, 'method not allowed'));
+      return;
+    }
+    const params = getAdpopcornParams(req);
+    const result = await processAdpopcornRewardCallback(params, true);
+    res.set('Content-Type', 'application/json');
+    res.status(200).json(result);
+  } catch (e) {
+    console.error('[AdPopcorn Staging] 콜백 오류:', e);
+    res.set('Content-Type', 'application/json');
+    res.status(200).json(buildAdpopcornResponse(false, 4000, 'server error'));
+  }
+});
+
+// 애드팝콘 관리자 > 콜백 서버 설정 > 라이브 서버 주소에 등록할 URL
+exports.adpopcornRewardCallback = functions.https.onRequest(async (req, res) => {
+  try {
+    const method = (req.method || '').toUpperCase();
+    if (method !== 'GET' && method !== 'POST') {
+      res.status(405).json(buildAdpopcornResponse(false, 4000, 'method not allowed'));
+      return;
+    }
+    const params = getAdpopcornParams(req);
+    const result = await processAdpopcornRewardCallback(params, false);
+    res.set('Content-Type', 'application/json');
+    res.status(200).json(result);
+  } catch (e) {
+    console.error('[AdPopcorn Live] 콜백 오류:', e);
+    res.set('Content-Type', 'application/json');
+    res.status(200).json(buildAdpopcornResponse(false, 4000, 'server error'));
+  }
+});
 
 // 브랜드 목록 조회 API (HTTP 호출 가능)
 exports.getBrandList = functions.https.onCall(async (data, context) => {

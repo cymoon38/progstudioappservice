@@ -32,5 +32,9 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 애드팝콘 오퍼월 (Android는 Manifest에서 앱키·해시키·로그 사용) -->
+        <meta-data android:name="adpopcorn_app_key" android:value="719270341"/>
+        <meta-data android:name="adpopcorn_hash_key" android:value="f0914cb6664e4991"/>
+        <meta-data android:name="enable_ap_log" android:value="enable"/>
     </application>
 </manifest>

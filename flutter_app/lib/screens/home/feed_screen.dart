@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:adpopcornreward/adpopcornreward.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/adpopcorn_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../services/viewed_posts_service.dart';
@@ -419,7 +421,17 @@ class _FeatureIconsSection extends StatelessWidget {
               icon: Icons.check_circle,
               label: '충전소',
               onTap: () {
-                // TODO: 충전소 화면
+                if (!AdPopcornConfig.isConfigured) return;
+                final auth = Provider.of<AuthService>(context, listen: false);
+                if (!auth.isLoggedIn) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('로그인 후 이용할 수 있습니다.')),
+                  );
+                  return;
+                }
+                AdPopcornReward.setUserId(auth.user!.uid);
+                AdPopcornReward.setStyle('코인 충전소', '#667eea');
+                AdPopcornReward.openOfferwall();
               },
             ),
           ),

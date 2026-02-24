@@ -711,8 +711,8 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
   // 카테고리별 상품코드 매핑 (각 카테고리별로 표시할 상품코드 목록)
   final Map<String, List<String>> _categoryGoodsCodes = {
     '커피/음료': ['G00003311076','G00003321051','G00003320983','G00003320985','G00003381084','G00003320984','G00003320992','G00002401526','G00003320986','G00003320987','G00003320988','G00002401526','G00002401537','G00002401542','G00003401079','G00003411061','G00004771059','G00002861259','G00003660932','G00003421395','G00001621761','G00001642212','G00001642210','G00004790938','G00004781056'], // 여기에 상품코드 목록을 추가하세요
-    '베이커리/도넛': ['G00002281136','G00003401037','G00004061012','G00004600937','G00000211032','G00000183421','G00000183546','G00003411019','G00004031068','G00004521060','G00004461058','G00004461029','G00004451208','G00003383351','G00001380787','G00004261067','G00004181050','G00003531021','G00001401113','G00001411118'], // 여기에 상품코드 목록을 추가하세요
-    '아이스크림': ['G00002101010','G00003181012','G00002081235','G00002101050','G00002101048','G00002100985','G00002101052','G00004521065','G00004451222','G00002090930','G00004820955','G00004261089','G00000183392','G00001961020','G00000221120','G00000220610'], // 여기에 상품코드 목록을 추가하세요
+    '베이커리/도넛': ['G00002281136','G00003401037','G00004061012','G00003411173','G00004600937','G00000211032','G00000183421','G00000183546','G00003411019','G00004031068','G00004521060','G00004461058','G00004461029','G00004451208','G00003383351','G00001380787','G00004261067','G00004181050','G00003531021','G00001401113','G00001411118'], // 여기에 상품코드 목록을 추가하세요
+    '아이스크림': ['G00002101010','G00003181012','G00002081235','G00002101048','G00002101050','G00004521065','G00002100985','G00002101052','G00004521065','G00004451222','G00002090930','G00004640931','G00004820955','G00004261089','G00000183392','G00001961020','G00000221120','G00000220610'], // 여기에 상품코드 목록을 추가하세요
     '편의점': ['G00004261473','G00004291585','G00000970725','G00000970724','G00000750718','G00000750719','G00001460945','G00003261295','G00004291200','G00001470935','G00001700935','G00001561375','G00001751640','G00004291195','G00003271513','G00003401026','G00004061147','G00004061145','G00004061148','G00004291214','G00004261490','G00005001013','G00005001011','G00003271514'], // 여기에 상품코드 목록을 추가하세요
     '피자/버거/치킨': ['G00004661005','G00002971421','G00002971422','G00004701493','G00005150928','G00005122385','G00005150933','G00003151420','G00003151421','G00003491299','G00003151424','G00005101024','G00003151429','G00003900948','G00004680954','G00003890969','G00003900950','G00003900947','G00003900944','G00003890952','G00003900941','G00003890945','G00003511060','G00003530999','G00003530994','G00003530980','G00003511071','G00003431681','G00003002383','G00003011837'], // 여기에 상품코드 목록을 추가하세요
     '영화/음악/독서': ['G00004220933','G00003061244','G00005190931','G00001441070','G00004220939','G00005200929','G00004220934','G00003061245','G00004220935','G00005200928','G00004220936','G00004441004','G00004220937','G00004220938','G00000182630''G00000200518','G00000610800','G00001680961'], // 여기에 상품코드 목록을 추가하세요
@@ -893,15 +893,8 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
           
           try {
             final data = doc.data();
-            // 검색 대상 필드: brandName, goodsTypeNm, goodsName
-            final goodsName = (data['goodsName'] ?? '').toString().toLowerCase();
-            final brandName = (data['brandName'] ?? '').toString().toLowerCase();
-            final goodsTypeNm = (data['goodsTypeNm'] ?? '').toString().toLowerCase();
-            
-            // 검색어가 상품명, 브랜드명, 상품타입명 중 하나라도 포함되면 추가
-            if (goodsName.contains(queryLower) || 
-                brandName.contains(queryLower) || 
-                goodsTypeNm.contains(queryLower)) {
+            final srchKeyword = (data['srchKeyword'] ?? '').toString().toLowerCase();
+            if (srchKeyword.contains(queryLower)) {
               final giftCard = DataService.fromGiftCardMap(data);
               searchResults.add(giftCard);
             }
@@ -974,16 +967,22 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       });
     } else {
       // 캐시 확인: 같은 카테고리를 다시 로드하는 경우 캐시에서 먼저 표시
+      // 단, 요청한 상품코드 수보다 캐시 개수가 적으면 새 코드가 추가된 것이므로 재조회
+      final goodsCodesForCacheCheck = _categoryGoodsCodes[_selectedCategory] ?? [];
+      final validCountForCache = goodsCodesForCacheCheck.where((c) => c.isNotEmpty).length;
       if (!forceRefresh && _selectedCategory != null && _categoryCache.containsKey(_selectedCategory)) {
         final cachedCards = _categoryCache[_selectedCategory]!;
-        debugPrint('✅ 캐시에서 로드: ${cachedCards.length}개 (카테고리: $_selectedCategory)');
-        setState(() {
-          _allGiftCards = cachedCards;
-          _giftCards = cachedCards;
-          _isLoading = false;
-          _hasError = false;
-        });
-        return; // 캐시에서 로드했으므로 종료
+        if (cachedCards.length >= validCountForCache) {
+          debugPrint('✅ 캐시에서 로드: ${cachedCards.length}개 (카테고리: $_selectedCategory)');
+          setState(() {
+            _allGiftCards = cachedCards;
+            _giftCards = cachedCards;
+            _isLoading = false;
+            _hasError = false;
+          });
+          return; // 캐시에서 로드했으므로 종료
+        }
+        debugPrint('📋 캐시보다 상품코드가 많음(${cachedCards.length} < $validCountForCache). 재조회합니다.');
       }
       
       setState(() {
@@ -1154,7 +1153,7 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       
       final foundGoodsCodes = giftCards.map((card) => card.goodsCode).toSet();
       final missingGoodsCodes = validGoodsCodes.where((code) => !foundGoodsCodes.contains(code)).toList();
-      // Firestore(캐시+서버)에서도 하나도 없을 때만 API로 최소한만 로드 (빈 화면 방지)
+      // Firestore에서 하나도 없을 때만 API로 최소한만 로드 (빈 화면 방지)
       if (giftCards.isEmpty && missingGoodsCodes.isNotEmpty) {
         debugPrint('⚠️ Firestore에 데이터 없음. API로 최대 10개 시드 로드...');
         const seedLimit = 10;
@@ -2086,7 +2085,7 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: goodsImg == null ? null : Colors.grey[200],
-                  border: Border.all(color: const Color.fromARGB(255, 225, 225, 225)!, width: 1),
+                  border: Border.all(color: const Color.fromARGB(255, 225, 225, 225), width: 1),
                 ),
                 child: goodsImg != null && goodsImg.isNotEmpty
                     ? ClipRRect(
