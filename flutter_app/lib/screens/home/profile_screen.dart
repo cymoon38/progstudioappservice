@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
+import '../../theme/app_theme.dart';
 import '../auth/login_screen.dart';
 import '../../widgets/app_profile_icon.dart';
 
@@ -17,6 +18,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('마이페이지'),
+        backgroundColor: Colors.white,
+        foregroundColor: AppTheme.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        iconTheme: const IconThemeData(color: AppTheme.textPrimary),
       ),
       body: Consumer<AuthService>(
         builder: (context, authService, _) {

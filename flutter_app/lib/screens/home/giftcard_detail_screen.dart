@@ -237,9 +237,13 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
       appBar: AppBar(
         title: const Text('기프티콘 상세'),
         backgroundColor: Colors.white,
+        foregroundColor: AppTheme.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         elevation: 0,
+        iconTheme: const IconThemeData(color: AppTheme.textPrimary),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),

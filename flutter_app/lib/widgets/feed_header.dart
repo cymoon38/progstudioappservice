@@ -2,12 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
 class FeedHeader extends StatefulWidget {
-  final VoidCallback? onUploadTap;
-
-  const FeedHeader({
-    super.key,
-    this.onUploadTap,
-  });
+  const FeedHeader({super.key});
 
   @override
   State<FeedHeader> createState() => _FeedHeaderState();
@@ -28,12 +23,6 @@ class _FeedHeaderState extends State<FeedHeader> {
     }
   }
 
-  void _handleUpload() {
-    if (widget.onUploadTap != null) {
-      widget.onUploadTap!();
-    }
-  }
-
   @override
   void dispose() {
     _searchController.dispose();
@@ -44,7 +33,7 @@ class _FeedHeaderState extends State<FeedHeader> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       margin: const EdgeInsets.only(bottom: 24),
       child: Row(
         children: [
@@ -120,52 +109,6 @@ class _FeedHeaderState extends State<FeedHeader> {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // 업로드 버튼 (기존 CSS: .upload-btn)
-          Material(
-            color: Colors.white, // CSS: background: white
-            borderRadius: BorderRadius.circular(25), // CSS: border-radius: 25px
-            child: InkWell(
-              onTap: _handleUpload,
-              borderRadius: BorderRadius.circular(25),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), // CSS: 0.75rem 1.5rem
-                decoration: BoxDecoration(
-                  // "완전 흰색"으로 보이도록 테두리/그림자는 제거
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(25),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '작품 업로드',
-                      style: TextStyle(
-                        color: AppTheme.textPrimary, // CSS: color: #333
-                        fontSize: 16, // CSS: 1rem = 16px
-                        fontWeight: FontWeight.w600, // CSS: font-weight: 600
-                      ),
-                    ),
-                    const SizedBox(width: 8), // CSS: gap: 0.5rem
-                    // 업로드 버튼 아이콘 (CSS: .upload-btn-icon) - 오른쪽 끝으로 이동
-                    Container(
-                      width: 32, // CSS: 2rem = 32px
-                      height: 32,
-                      decoration: BoxDecoration(
-                        gradient: AppTheme.primaryGradient, // CSS: linear-gradient(135deg, #667eea 0%, #764ba2 100%)
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.add,
-                        color: Colors.white,
-                        size: 19.2, // CSS: 1.2rem ≈ 19.2px
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
           ),

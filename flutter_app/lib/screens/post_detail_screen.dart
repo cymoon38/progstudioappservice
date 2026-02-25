@@ -546,6 +546,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         title: Text(post.type == 'notice' ? '공지사항' : '게시물 상세'),
         backgroundColor: Colors.white,
         foregroundColor: AppTheme.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        iconTheme: const IconThemeData(color: AppTheme.textPrimary),
         actions: [
           // 게시물 삭제 버튼
           // - 일반 게시물: 작성자만

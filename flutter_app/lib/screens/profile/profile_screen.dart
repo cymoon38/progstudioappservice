@@ -174,7 +174,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final authService = Provider.of<AuthService>(context);
     if (!authService.isLoggedIn || authService.userData == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('마이페이지')),
+        appBar: AppBar(
+          title: const Text('마이페이지'),
+          backgroundColor: Colors.white,
+          foregroundColor: AppTheme.textPrimary,
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+          iconTheme: const IconThemeData(color: AppTheme.textPrimary),
+        ),
         body: const Center(child: Text('로그인이 필요합니다.')),
       );
     }
@@ -190,6 +197,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: Text(_isSelectionMode ? '${_selectedPostIds.length}개 선택됨' : '마이페이지'),
         backgroundColor: Colors.white,
         foregroundColor: AppTheme.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        iconTheme: const IconThemeData(color: AppTheme.textPrimary),
         actions: [
           if (_isSelectionMode) ...[
             if (_selectedPostIds.isNotEmpty)

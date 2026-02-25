@@ -44,7 +44,7 @@ class _PopularScreenState extends State<PopularScreen> {
     final isMobile = MediaQuery.of(context).size.width <= 768;
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.white,
       appBar: null, // 상단 네비게이션은 HomeScreen에서 처리
       body: SafeArea(
         bottom: false, // 하단 SafeArea는 하단바가 처리
@@ -158,33 +158,50 @@ class _PopularScreenState extends State<PopularScreen> {
                       ),
                     ),
                   ),
-                  // 게시물 리스트 (CSS: .feed-container)
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final post = dataService.popularPosts[index];
-                          return Consumer<ViewedPostsService>(
-                            builder: (context, viewedPostsService, _) {
-                              final isViewed = viewedPostsService.isViewed(post.id);
-                              return _PopularPostCard(
-                                post: post,
-                                isViewed: isViewed,
-                                onOpen: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PostDetailScreen(postId: post.id),
-                                    ),
+                  // 게시물 리스트 (구분선으로 구분)
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final post = dataService.popularPosts[index];
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (index > 0)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                child: Container(
+                                  height: 1,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE6E8F0),
+                                    borderRadius: BorderRadius.circular(1),
+                                  ),
+                                ),
+                              ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Consumer<ViewedPostsService>(
+                                builder: (context, viewedPostsService, _) {
+                                  final isViewed = viewedPostsService.isViewed(post.id);
+                                  return _PopularPostCard(
+                                    post: post,
+                                    isViewed: isViewed,
+                                    onOpen: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => PostDetailScreen(postId: post.id),
+                                        ),
+                                      );
+                                    },
                                   );
                                 },
-                              );
-                            },
-                          );
-                        },
-                        childCount: dataService.popularPosts.length,
-                      ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                      childCount: dataService.popularPosts.length,
                     ),
                   ),
                   // 하단 여백 (하단바와 SafeArea 고려)
@@ -216,32 +233,17 @@ class _PopularPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 본 게시물 스타일 (CSS: .post-card.viewed-post)
-    final backgroundColor = isViewed ? const Color(0xFFF5F5F5) : Colors.white;
-    final opacity = isViewed ? 0.8 : 1.0; // CSS: opacity: 0.8
+    final opacity = isViewed ? 0.8 : 1.0;
 
     return Opacity(
       opacity: opacity,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE6E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: InkWell(
-          onTap: onOpen,
-          borderRadius: BorderRadius.circular(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               // 헤더
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -258,7 +260,7 @@ class _PopularPostCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: isViewed ? const Color(0xFF999999) : AppTheme.textPrimary, // CSS: .viewed-post .author-name
+                            color: isViewed ? const Color(0xFF999999) : AppTheme.textPrimary,
                           ),
                         ),
                         Text(
@@ -293,7 +295,7 @@ class _PopularPostCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 17.6,
                     fontWeight: FontWeight.w600,
-                    color: isViewed ? const Color(0xFF666666) : AppTheme.textPrimary, // CSS: .viewed-post .post-title
+                    color: isViewed ? const Color(0xFF666666) : AppTheme.textPrimary,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -374,15 +376,15 @@ class _PopularPostCard extends StatelessWidget {
                             )).toList(),
                           ),
                         ),
-                ),
+                      ),
                     ],
-              ],
-            ),
-          ),
+                  ],
+                ),
+              ),
             ],
+          ),
         ),
       ),
-    ),
     );
   }
 }

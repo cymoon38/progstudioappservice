@@ -190,9 +190,19 @@ class AppTheme {
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 6,
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: Offset.zero,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
             offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(2, 2),
           ),
         ],
       );

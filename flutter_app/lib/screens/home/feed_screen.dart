@@ -11,7 +11,6 @@ import '../../services/data_service.dart';
 import '../../services/viewed_posts_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_profile_icon.dart';
-import '../../widgets/feed_header.dart';
 import '../../widgets/upload_modal.dart';
 import '../post_detail_screen.dart';
 import 'notice_screen.dart';
@@ -225,97 +224,133 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  void _openUploadModal() {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그인이 필요합니다.')),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => const UploadModal(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    const bottomNavHeight = 60.0;
+    const fabBottomMargin = 14.0;
+    const fabLowerBy = 100.0; // 글쓰기 버튼을 100px 낮춤
+
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.white,
       body: SafeArea(
         bottom: false, // 하단 SafeArea는 하단바가 처리
-        child: Consumer<DataService>(
-        builder: (context, dataService, _) {
-          return RefreshIndicator(
-            onRefresh: () async {
-              await dataService.getAllPosts();
-            },
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: ClampingScrollPhysics(),
-              ),
-              slivers: [
-                // 프로모션 배너
-                SliverToBoxAdapter(
-                  child: _PromoBanner(),
-                ),
-                // 기능 아이콘 행
-                SliverToBoxAdapter(
-                  child: _FeatureIconsSection(),
-                ),
-                // 미션 미리보기
-                SliverToBoxAdapter(
-                  child: _MissionPreviewSection(),
-                ),
-                // 피드 헤더 (검색 + 업로드)
-                SliverToBoxAdapter(
-                  child: FeedHeader(
-                    onUploadTap: () {
-                      // 업로드 버튼 클릭 처리 (기존 프로그램과 동일 - 모달 팝업)
-                      final authService = Provider.of<AuthService>(context, listen: false);
-                      if (!authService.isLoggedIn) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('로그인이 필요합니다.'),
-                          ),
-                        );
-                        return;
-                      }
-                      // 업로드 모달 표시
-                      showDialog(
-                        context: context,
-                        barrierDismissible: true,
-                        builder: (context) => const UploadModal(),
-                      );
-                    },
-                  ),
-                ),
-                // 게시물 목록
-                if (dataService.isLoading)
-                  const SliverFillRemaining(
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (dataService.posts.isEmpty)
-                  const SliverFillRemaining(
-                    child: Center(
-                      child: Text('아직 게시물이 없습니다.'),
+        child: Stack(
+          children: [
+            Consumer<DataService>(
+              builder: (context, dataService, _) {
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    await dataService.getAllPosts();
+                  },
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: ClampingScrollPhysics(),
                     ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final post = dataService.posts[index];
-                          return Consumer<ViewedPostsService>(
-                            builder: (context, viewedPostsService, _) {
-                              final isViewed = viewedPostsService.isViewed(post.id);
-                              return _PostCard(post: post, isViewed: isViewed);
+                    slivers: [
+                      SliverToBoxAdapter(child: _PromoBanner()),
+                      SliverToBoxAdapter(child: _FeatureIconsSection()),
+                      SliverToBoxAdapter(child: _MissionPreviewSection()),
+                      if (dataService.isLoading)
+                        const SliverFillRemaining(
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (dataService.posts.isEmpty)
+                        const SliverFillRemaining(
+                          child: Center(child: Text('아직 게시물이 없습니다.')),
+                        )
+                      else
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final post = dataService.posts[index];
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (index > 0)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                      child: Container(
+                                        height: 1,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFE6E8F0),
+                                          borderRadius: BorderRadius.circular(1),
+                                        ),
+                                      ),
+                                    ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    child: Consumer<ViewedPostsService>(
+                                      builder: (context, viewedPostsService, _) {
+                                        final isViewed = viewedPostsService.isViewed(post.id);
+                                        return _PostCard(post: post, isViewed: isViewed);
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              );
                             },
-                          );
-                        },
-                        childCount: dataService.posts.length,
+                            childCount: dataService.posts.length,
+                          ),
+                        ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: MediaQuery.of(context).padding.bottom + 80,
+                        ),
                       ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            // 하단바 위 글쓰기 버튼 (스토어 사용하기 버튼과 동일 색상)
+            Positioned(
+              right: 16,
+              bottom: (bottomNavHeight + fabBottomMargin + MediaQuery.of(context).padding.bottom - fabLowerBy).clamp(14.0, double.infinity),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _openUploadModal,
+                  borderRadius: BorderRadius.circular(28),
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor,
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.edit,
+                      color: Colors.white,
+                      size: 26,
                     ),
                   ),
-                // 마지막 게시물이 하단바에 잘리지 않도록 여백 추가
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: MediaQuery.of(context).padding.bottom + 80, // SafeArea 하단 + 하단바 높이(60) + 추가 여백(20)
-                  ),
                 ),
-              ],
+              ),
             ),
-          );
-        },
+          ],
         ),
       ),
     );
@@ -333,9 +368,19 @@ class _PromoBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
+            color: AppTheme.primaryColor.withOpacity(0.05),
+            blurRadius: 16,
+            offset: Offset.zero,
+          ),
+          BoxShadow(
+            color: AppTheme.primaryColor.withOpacity(0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: AppTheme.primaryColor.withOpacity(0.06),
+            blurRadius: 8,
+            offset: const Offset(2, 4),
           ),
         ],
       ),
@@ -344,7 +389,7 @@ class _PromoBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '그림 커뮤니티',
+            '캔버스 캐시시',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -353,7 +398,7 @@ class _PromoBanner extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            '다양한 작품을 감상하고 나만의 작품을 공유해보세요',
+            '작품을 공유하세요요',
             style: TextStyle(
               fontSize: 16,
               color: Colors.white,
@@ -684,9 +729,19 @@ class _MissionPreviewSectionState extends State<_MissionPreviewSection> with Wid
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 6,
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: Offset.zero,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
             offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(2, 2),
           ),
         ],
       ),
@@ -804,26 +859,10 @@ class _PostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 본 게시물 스타일 (CSS: .post-card.viewed-post)
-    final backgroundColor = isViewed ? const Color(0xFFF5F5F5) : Colors.white;
     final opacity = isViewed ? 0.8 : 1.0;
-    
+
     return Opacity(
       opacity: opacity,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE6E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
       child: InkWell(
         onTap: () {
           Navigator.push(
@@ -833,8 +872,9 @@ class _PostCard extends StatelessWidget {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 0),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 헤더
@@ -853,7 +893,7 @@ class _PostCard extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: isViewed ? const Color(0xFF999999) : AppTheme.textPrimary, // CSS: .viewed-post .author-name
+                            color: isViewed ? const Color(0xFF999999) : AppTheme.textPrimary,
                           ),
                         ),
                         Text(
@@ -905,9 +945,9 @@ class _PostCard extends StatelessWidget {
               child: Text(
                 post.title,
                 style: TextStyle(
-                  fontSize: 17.6, // CSS: 1.1rem ≈ 17.6px
-                  fontWeight: FontWeight.w600, // CSS: font-weight: 600
-                  color: isViewed ? const Color(0xFF666666) : AppTheme.textPrimary, // CSS: .viewed-post .post-title
+                  fontSize: 17.6,
+                  fontWeight: FontWeight.w600,
+                  color: isViewed ? const Color(0xFF666666) : AppTheme.textPrimary,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -1002,6 +1042,4 @@ class _PostCard extends StatelessWidget {
     );
   }
 }
-
-
 
