@@ -879,6 +879,18 @@ exports.syncGiftCardsDaily = functions
       }
     });
 
+// 매일 한국 시간 03:15에 기프티콘 탭/검색 캐시 무효화 (앱에서 서버에서 다시 읽도록)
+exports.invalidateGiftCardCacheDaily = functions
+  .runWith({ timeoutSeconds: 60 })
+  .pubsub.schedule('15 3 * * *')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    await db.collection('syncStatus').doc('giftcardCacheInvalidation').set({
+      invalidatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log('✅ 기프티콘 캐시 무효화 타임스탬프 갱신 (한국 03:15)');
+  });
+
 // =========================
 // 기프트쇼비즈 API 연동
 // =========================

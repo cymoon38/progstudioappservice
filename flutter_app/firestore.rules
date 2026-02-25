@@ -140,6 +140,12 @@ service cloud.firestore {
            allow update, delete: if false;
          }
          
+         // 캐시 무효화 등 동기화 상태 (syncStatus) - Cloud Functions에서만 쓰기
+         match /syncStatus/{docId} {
+           allow read: if true;
+           allow create, update, delete: if false;
+         }
+         
          // 기프티콘 상품 (giftcards) - 캐시용
          match /giftcards/{giftcardId} {
            // 읽기: 모든 사용자 허용 (기프티콘 목록 조회용)

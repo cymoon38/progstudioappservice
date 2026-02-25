@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lottery_service.dart';
 
@@ -3860,6 +3861,66 @@ class DataService extends ChangeNotifier {
       debugPrint('❌ 브랜드 목록 조회 오류: $e');
       debugPrint('📋 스택 트레이스: $stackTrace');
       return null;
+    }
+  }
+
+  /// 기프티콘 캐시 무효화 여부 확인 (매일 03:15 KST에 서버에서 갱신됨).
+  /// 탭 로드와 검색은 각각 따로 추적: 무효화 후 첫 탭 로드·첫 검색 모두 서버에서 읽음.
+  static const String _keyLastGiftCardCacheInvalidationTab = 'lastGiftCardCacheInvalidationTab';
+  static const String _keyLastGiftCardCacheInvalidationSearch = 'lastGiftCardCacheInvalidationSearch';
+
+  /// [forSearch] true면 검색용, false면 탭(카테고리) 로드용. 무효화 후 첫 검색/첫 탭 로드 시 서버에서 읽고 완료 후 setLastGiftCardCacheInvalidation(serverMillis, forSearch: ...) 호출.
+  Future<(bool, int?)> shouldForceServerForGiftCards({required bool forSearch}) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('syncStatus')
+          .doc('giftcardCacheInvalidation')
+          .get(const GetOptions(source: Source.server));
+      if (!doc.exists) {
+        debugPrint('📋 기프티콘 캐시 무효화: doc 없음 → 캐시 사용');
+        return (false, null);
+      }
+      final data = doc.data();
+      final invalidatedAt = data?['invalidatedAt'];
+      if (invalidatedAt == null) {
+        debugPrint('📋 기프티콘 캐시 무효화: invalidatedAt 없음 → 캐시 사용');
+        return (false, null);
+      }
+      final serverMillis = (invalidatedAt is Timestamp)
+          ? invalidatedAt.millisecondsSinceEpoch
+          : (invalidatedAt is DateTime)
+              ? invalidatedAt.millisecondsSinceEpoch
+              : null;
+      if (serverMillis == null) return (false, null);
+      final prefs = await SharedPreferences.getInstance();
+      final key = forSearch ? _keyLastGiftCardCacheInvalidationSearch : _keyLastGiftCardCacheInvalidationTab;
+      final last = prefs.getInt(key) ?? 0;
+      if (serverMillis > last) {
+        debugPrint('📋 기프티콘 캐시 무효화 감지 (${forSearch ? "검색" : "탭"}): server=$serverMillis, last=$last → 서버에서 읽기');
+        return (true, serverMillis);
+      }
+      debugPrint('📋 기프티콘 캐시 무효화 없음 (${forSearch ? "검색" : "탭"}): last=$last ≥ server=$serverMillis → 캐시 사용');
+      return (false, null);
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('permission-denied') || msg.contains('PERMISSION_DENIED')) {
+        debugPrint('📋 기프티콘 캐시 무효화: syncStatus 읽기 권한 없음 → 캐시 사용');
+      } else {
+        debugPrint('기프티콘 캐시 무효화 확인 실패 (네트워크 등): $e');
+        if (forSearch) return (true, null);
+      }
+      return (false, null);
+    }
+  }
+
+  /// 서버에서 기프티콘을 읽은 후 호출. [forSearch] true면 검색, false면 탭 로드.
+  Future<void> setLastGiftCardCacheInvalidation(int serverMillis, {required bool forSearch}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = forSearch ? _keyLastGiftCardCacheInvalidationSearch : _keyLastGiftCardCacheInvalidationTab;
+      await prefs.setInt(key, serverMillis);
+    } catch (e) {
+      debugPrint('기프티콘 캐시 무효화 타임스탬프 저장 오류: $e');
     }
   }
 

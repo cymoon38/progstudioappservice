@@ -733,6 +733,9 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
   
   // 메모리 캐시: 카테고리별로 로드한 데이터 저장 (앱 실행 중 유지)
   static final Map<String, List<GiftCard>> _categoryCache = {};
+  // 매일 03:15 KST 캐시 무효화 시 서버에서 다시 읽기
+  bool _forceServerForGiftCards = false;
+  int? _pendingInvalidatedAtMillis; // 서버 읽기 완료 후 prefs에 저장할 무효화 타임스탬프
   
   @override
   void initState() {
@@ -767,13 +770,12 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
   }
   
   // 외부에서 카테고리 변경을 요청할 때 사용
+  // 리스트는 여기서 비우지 않음. _loadGiftCards()에서 캐시 없을 때만 비움 → 캐시 있으면 빈 화면 깜빡임 방지
   void setCategory(String category) {
     if (_selectedCategory != category) {
       setState(() {
         _selectedCategory = category;
         _hasMore = false;
-        _allGiftCards = [];
-        _giftCards = [];
         _isSearching = category == '상품 검색';
         if (!_isSearching) {
           _searchQuery = '';
@@ -855,28 +857,40 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
     try {
       debugPrint('🔍 상품 검색 시작: "$query"');
       
+      // 매일 03:15 KST 캐시 무효화 여부 확인 (검색은 탭과 별도 추적 → 무효화 후 첫 검색도 서버에서 읽음)
+      final dataService = Provider.of<DataService>(context, listen: false);
+      final (shouldForce, invalidatedAtMillis) = await dataService.shouldForceServerForGiftCards(forSearch: true);
+      if (shouldForce) {
+        _categoryCache.clear();
+        _forceServerForGiftCards = true;
+        _pendingInvalidatedAtMillis = invalidatedAtMillis; // null이면 완료 시 prefs 저장 생략
+        debugPrint('📋 검색: 서버에서 읽습니다. (캐시 무효화 또는 서버 확인 실패 후 강제)');
+      }
+      
       // ⚠️ 중요: Firestore 읽기 비용은 실제로 읽은 문서 수에 따라 결정됩니다
-      // 비용 최적화: 처음 500개만 읽고, 검색 결과가 10개 미만이면 500개씩 더 읽기
+      // 500개씩 읽고, 검색 결과가 10개 미만일 때 500개씩 추가로 읽기
       const int initialLimit = 500;
       const int batchSize = 500;
-      const int maxReads = 2000; // 최대 2000개까지만 읽기
+      const int maxReads = 3000; // 상품 약 2400 + 여유분
       
       final List<GiftCard> searchResults = [];
       final queryLower = query.toLowerCase();
       int totalReads = 0;
       int currentLimit = initialLimit;
       Set<String> processedDocIds = {}; // 이미 처리한 문서 ID 추적
+      final useServer = _forceServerForGiftCards;
+      debugPrint('   📡 검색 소스: ${useServer ? "서버" : "캐시"}');
       
-      // 검색 결과가 10개 미만이면 500개씩 더 읽기
+      // 검색 결과가 10개 미만이면 500개씩 추가로 읽기
       while (searchResults.length < 10 && currentLimit <= maxReads) {
-        // 캐시 우선 사용 (이미 읽은 데이터는 비용 없음)
+        // 캐시 무효화 시 서버에서, 아니면 캐시 우선
         final snapshot = await FirebaseFirestore.instance
             .collection('giftcards')
             .limit(currentLimit)
-            .get(const GetOptions(source: Source.cache));
+            .get(GetOptions(source: useServer ? Source.server : Source.cache));
         
-        // 캐시에 없으면 서버에서 가져오기
-        final finalSnapshot = snapshot.docs.isEmpty
+        // 캐시에 없으면 서버에서 가져오기 (무효화가 아닐 때만)
+        final finalSnapshot = (!useServer && snapshot.docs.isEmpty)
             ? await FirebaseFirestore.instance
                 .collection('giftcards')
                 .limit(currentLimit)
@@ -903,12 +917,14 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
           }
         }
         
-        // 읽기 비용 계산 (서버에서 읽은 경우만)
-        if (snapshot.docs.isEmpty) {
+        // 읽기 비용 계산 (서버에서 읽은 경우만): useServer면 이번 배치는 서버에서 읽은 것
+        if (useServer) {
+          totalReads += finalSnapshot.docs.length;
+        } else if (snapshot.docs.isEmpty) {
           totalReads += finalSnapshot.docs.length;
         }
         
-        // 검색 결과가 10개 이상이거나 더 이상 읽을 문서가 없으면 종료
+        // 결과가 10개 이상이거나 더 이상 읽을 문서가 없으면 종료
         if (searchResults.length >= 10 || finalSnapshot.docs.length < currentLimit) {
           break;
         }
@@ -926,7 +942,12 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       if (mounted && _selectedCategory == '상품 검색' && _searchQuery == query) {
         // 검색 결과 전체 저장
         _allSearchResults = searchResults;
-        
+        _forceServerForGiftCards = false; // 검색 완료 후 플래그 해제
+        if (_pendingInvalidatedAtMillis != null) {
+          await dataService.setLastGiftCardCacheInvalidation(_pendingInvalidatedAtMillis!, forSearch: true);
+          _pendingInvalidatedAtMillis = null;
+        }
+
         // 처음 10개만 표시
         final displayCount = searchResults.length > 10 ? 10 : searchResults.length;
         final displayedResults = searchResults.take(displayCount).toList();
@@ -941,6 +962,11 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
         });
       }
     } catch (e) {
+      _forceServerForGiftCards = false;
+      if (_pendingInvalidatedAtMillis != null) {
+        await Provider.of<DataService>(context, listen: false).setLastGiftCardCacheInvalidation(_pendingInvalidatedAtMillis!, forSearch: true);
+        _pendingInvalidatedAtMillis = null;
+      }
       debugPrint('❌ 상품 검색 오류: $e');
       if (mounted && _selectedCategory == '상품 검색') {
         setState(() {
@@ -966,11 +992,19 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
         _isLoadingMore = true;
       });
     } else {
-      // 캐시 확인: 같은 카테고리를 다시 로드하는 경우 캐시에서 먼저 표시
-      // 단, 요청한 상품코드 수보다 캐시 개수가 적으면 새 코드가 추가된 것이므로 재조회
+      final dataService = Provider.of<DataService>(context, listen: false);
+      // 매일 03:15 KST 캐시 무효화 여부 확인 (탭 로드는 검색과 별도 추적)
+      final (shouldForce, invalidatedAtMillis) = await dataService.shouldForceServerForGiftCards(forSearch: false);
+      if (shouldForce && invalidatedAtMillis != null) {
+        _categoryCache.clear();
+        _forceServerForGiftCards = true;
+        _pendingInvalidatedAtMillis = invalidatedAtMillis;
+        debugPrint('📋 기프티콘 캐시 무효화됨. 서버에서 다시 로드합니다.');
+      }
+      // 캐시 확인: 같은 카테고리를 다시 로드하는 경우 캐시에서 먼저 표시 (무효화 시 건너뜀)
       final goodsCodesForCacheCheck = _categoryGoodsCodes[_selectedCategory] ?? [];
       final validCountForCache = goodsCodesForCacheCheck.where((c) => c.isNotEmpty).length;
-      if (!forceRefresh && _selectedCategory != null && _categoryCache.containsKey(_selectedCategory)) {
+      if (!_forceServerForGiftCards && !forceRefresh && _selectedCategory != null && _categoryCache.containsKey(_selectedCategory)) {
         final cachedCards = _categoryCache[_selectedCategory]!;
         if (cachedCards.length >= validCountForCache) {
           debugPrint('✅ 캐시에서 로드: ${cachedCards.length}개 (카테고리: $_selectedCategory)');
@@ -1031,10 +1065,15 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       if (!_hasCheckedSync && !_isSyncing) {
         _isSyncing = true;
         debugPrint('📋 Firestore 데이터 확인 중...');
-        final existingSnapshot = await FirebaseFirestore.instance
-            .collection('giftcards')
-            .limit(1)
-            .get();
+        final existingSnapshot = _forceServerForGiftCards
+            ? await FirebaseFirestore.instance
+                .collection('giftcards')
+                .limit(1)
+                .get(const GetOptions(source: Source.server))
+            : await FirebaseFirestore.instance
+                .collection('giftcards')
+                .limit(1)
+                .get();
         
         // 2. 전체 상품이 없으면 백그라운드에서 동기화 시작
         if (existingSnapshot.docs.isEmpty) {
@@ -1064,11 +1103,12 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       final List<Future<List<GiftCard>>> batchFutures = [];
       for (int i = 0; i < validGoodsCodes.length; i += maxWhereInSize) {
         final batch = validGoodsCodes.skip(i).take(maxWhereInSize).toList();
+        final useServer = _forceServerForGiftCards;
         batchFutures.add(
           FirebaseFirestore.instance
               .collection('giftcards')
               .where(FieldPath.documentId, whereIn: batch)
-              .get(const GetOptions(source: Source.cache)) // 캐시 우선 조회로 빠른 응답
+              .get(GetOptions(source: useServer ? Source.server : Source.cache)) // 캐시 무효화 시 서버에서 조회
               .then((snapshot) {
                 final List<GiftCard> batchCards = [];
                 for (final doc in snapshot.docs) {
@@ -1211,6 +1251,11 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       // 경쟁 조건 방지: 로딩 시작 시 저장한 카테고리와 현재 카테고리가 일치하는지 확인
       if (loadingCategory != _selectedCategory) {
         debugPrint('⚠️ 카테고리가 변경되어 로딩 결과 무시 (로딩: $loadingCategory, 현재: $_selectedCategory)');
+        _forceServerForGiftCards = false;
+        if (_pendingInvalidatedAtMillis != null) {
+          await Provider.of<DataService>(context, listen: false).setLastGiftCardCacheInvalidation(_pendingInvalidatedAtMillis!, forSearch: false);
+          _pendingInvalidatedAtMillis = null;
+        }
         return; // 카테고리가 변경되었으므로 결과 무시
       }
       
@@ -1218,6 +1263,11 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
       if (loadingCategory != null) {
         _categoryCache[loadingCategory] = giftCards;
         debugPrint('💾 캐시에 저장: ${giftCards.length}개 (카테고리: $loadingCategory)');
+      }
+      _forceServerForGiftCards = false; // 캐시 무효화 후 서버 로드 완료
+      if (_pendingInvalidatedAtMillis != null) {
+        await Provider.of<DataService>(context, listen: false).setLastGiftCardCacheInvalidation(_pendingInvalidatedAtMillis!, forSearch: false);
+        _pendingInvalidatedAtMillis = null;
       }
       
       if (mounted && loadingCategory == _selectedCategory) {
@@ -1231,6 +1281,11 @@ class _GiftCardListTabSliverState extends State<_GiftCardListTabSliver> {
         debugPrint('✅ 기프티콘 목록 표시: ${_giftCards.length}개');
       }
     } catch (e) {
+      _forceServerForGiftCards = false;
+      if (_pendingInvalidatedAtMillis != null) {
+        await Provider.of<DataService>(context, listen: false).setLastGiftCardCacheInvalidation(_pendingInvalidatedAtMillis!, forSearch: false);
+        _pendingInvalidatedAtMillis = null;
+      }
       debugPrint('❌ 기프티콘 목록 로드 오류: $e');
       // 경쟁 조건 방지: 로딩 시작 시 저장한 카테고리와 현재 카테고리가 일치하는지 확인
       if (mounted && _loadingCategory == _selectedCategory) {
