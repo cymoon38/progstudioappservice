@@ -389,7 +389,7 @@ class _PromoBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '캔버스 캐시시',
+            '캔버스 캐시',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -398,7 +398,7 @@ class _PromoBanner extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            '작품을 공유하세요요',
+            '작품을 공유하세요',
             style: TextStyle(
               fontSize: 16,
               color: Colors.white,
@@ -482,8 +482,7 @@ class _FeatureIconsSection extends StatelessWidget {
           ),
           Expanded(
             child: _FeatureIcon(
-              icon: null, // 커스텀 아이콘 사용
-              customIcon: const _SimpleMegaphoneIcon(),
+              customIcon: const _MegaphoneIcon(),
               label: '공지',
               onTap: () {
                 Navigator.push(
@@ -497,6 +496,80 @@ class _FeatureIconsSection extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 메가폰 아이콘 (몸통 + 손잡이만, 앞쪽 막대 3개 없음)
+class _MegaphonePainter extends CustomPainter {
+  _MegaphonePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 몸통: 혼 형태 (길게, 왼쪽 좁음 ~ 오른쪽 넓음)
+    const bodyLeft = 6.0;
+    const bodyRight = 21.0;
+    const topNarrow = 7.0;
+    const bottomNarrow = 15.0;
+    const topWide = 4.0;
+    const bottomWide = 20.0;
+
+    // U자 손잡이 (왼쪽)
+    const uHandleLeft = 0.0;
+
+    // 세로 손잡이 (U자 손잡이 아래, 왼쪽)
+    const verticalHandleLeft = 2.5;
+    const verticalHandleRight = 4.5;
+    const verticalHandleTop = 15.0;
+    const verticalHandleBottom = 22.0;
+
+    final fillPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final strokePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    // 몸통 + U자 손잡이 (한 경로)
+    final bodyPath = Path()
+      ..moveTo(uHandleLeft, topNarrow)
+      ..lineTo(bodyLeft, topNarrow)
+      ..lineTo(bodyRight, topWide)
+      ..lineTo(bodyRight, bottomWide)
+      ..lineTo(bodyLeft, bottomNarrow)
+      ..lineTo(uHandleLeft, bottomNarrow)
+      ..close();
+    canvas.drawPath(bodyPath, fillPaint);
+    canvas.drawPath(bodyPath, strokePaint);
+
+    // 세로 손잡이 (몸통 아래, 얇게)
+    final verticalPath = Path()
+      ..moveTo(verticalHandleLeft, verticalHandleTop)
+      ..lineTo(verticalHandleRight, verticalHandleTop)
+      ..lineTo(verticalHandleRight, verticalHandleBottom)
+      ..lineTo(verticalHandleLeft, verticalHandleBottom)
+      ..close();
+    canvas.drawPath(verticalPath, fillPaint);
+    canvas.drawPath(verticalPath, strokePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MegaphonePainter oldDelegate) => oldDelegate.color != color;
+}
+
+class _MegaphoneIcon extends StatelessWidget {
+  const _MegaphoneIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(24, 24),
+      painter: _MegaphonePainter(color: AppTheme.primaryColor),
     );
   }
 }
@@ -555,91 +628,6 @@ class _FeatureIcon extends StatelessWidget {
       ),
     );
   }
-}
-
-// 심플한 메가폰 아이콘
-class _SimpleMegaphoneIcon extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _SimpleMegaphoneIcon({
-    this.size = 24,
-    this.color = AppTheme.primaryColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: _MegaphonePainter(color: color),
-      ),
-    );
-  }
-}
-
-class _MegaphonePainter extends CustomPainter {
-  final Color color;
-
-  _MegaphonePainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final width = size.width;
-    final height = size.height;
-    
-    // 심플한 메가폰 경로 (오른쪽을 향한 형태)
-    final path = Path();
-    
-    // 원뿔형 벨 부분 (오른쪽, 넓은 부분)
-    final bellRightTop = Offset(width * 0.85, height * 0.2);
-    final bellRightBottom = Offset(width * 0.85, height * 0.8);
-    final bellLeftTop = Offset(width * 0.5, height * 0.3);
-    final bellLeftBottom = Offset(width * 0.5, height * 0.7);
-    
-    // 원뿔형 벨
-    path.moveTo(bellLeftTop.dx, bellLeftTop.dy);
-    path.lineTo(bellRightTop.dx, bellRightTop.dy);
-    path.lineTo(bellRightBottom.dx, bellRightBottom.dy);
-    path.lineTo(bellLeftBottom.dx, bellLeftBottom.dy);
-    path.close();
-    
-    // 원통형 몸체 (왼쪽)
-    final bodyLeftTop = Offset(width * 0.15, height * 0.4);
-    final bodyLeftBottom = Offset(width * 0.15, height * 0.6);
-    
-    path.moveTo(bellLeftTop.dx, bellLeftTop.dy);
-    path.lineTo(bodyLeftTop.dx, bodyLeftTop.dy);
-    path.lineTo(bodyLeftBottom.dx, bodyLeftBottom.dy);
-    path.lineTo(bellLeftBottom.dx, bellLeftBottom.dy);
-    path.close();
-    
-    // 손잡이 (아래쪽, 더 두껍게)
-    final handleStartLeft = Offset(width * 0.18, height * 0.6);
-    final handleStartRight = Offset(width * 0.22, height * 0.6);
-    final handleEndLeft = Offset(width * 0.3, height * 0.92);
-    final handleEndRight = Offset(width * 0.38, height * 0.92);
-    final handleMidLeft = Offset(width * 0.24, height * 0.76);
-    final handleMidRight = Offset(width * 0.32, height * 0.76);
-    
-    // 손잡이 왼쪽 경로
-    path.moveTo(handleStartLeft.dx, handleStartLeft.dy);
-    path.quadraticBezierTo(handleMidLeft.dx, handleMidLeft.dy, handleEndLeft.dx, handleEndLeft.dy);
-    // 손잡이 오른쪽 경로
-    path.lineTo(handleEndRight.dx, handleEndRight.dy);
-    path.quadraticBezierTo(handleMidRight.dx, handleMidRight.dy, handleStartRight.dx, handleStartRight.dy);
-    path.close();
-    
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // 미션 미리보기 섹션 (추첨 결과 표시)
@@ -888,12 +876,17 @@ class _PostCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          post.author,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: isViewed ? const Color(0xFF999999) : AppTheme.textPrimary,
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Text(
+                            post.author,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: isViewed ? const Color(0xFF999999) : AppTheme.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.visible,
                           ),
                         ),
                         Text(
@@ -939,18 +932,21 @@ class _PostCard extends StatelessWidget {
                 ],
               ),
             ),
-            // 제목 (CSS: .post-title)
+            // 제목 (CSS: .post-title) - 긴 제목은 가로 스크롤
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), // CSS: margin: 0.5rem 0
-              child: Text(
-                post.title,
-                style: TextStyle(
-                  fontSize: 17.6,
-                  fontWeight: FontWeight.w600,
-                  color: isViewed ? const Color(0xFF666666) : AppTheme.textPrimary,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Text(
+                  post.title,
+                  style: TextStyle(
+                    fontSize: 17.6,
+                    fontWeight: FontWeight.w600,
+                    color: isViewed ? const Color(0xFF666666) : AppTheme.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.visible,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
             // 액션 버튼 (CSS: .post-actions)

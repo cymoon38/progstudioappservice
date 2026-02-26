@@ -68,8 +68,9 @@ class _FeedHeaderState extends State<FeedHeader> {
                       decoration: InputDecoration(
                         hintText: '작품 검색',
                         hintStyle: TextStyle(
-                          color: AppTheme.textTertiary, // CSS: color: #999
-                          fontSize: 15.2, // CSS: 0.95rem ≈ 15.2px
+                          color: AppTheme.textTertiary,
+                          fontSize: 15.2,
+                          fontWeight: FontWeight.w200,
                         ),
                         border: InputBorder.none,
                           enabledBorder: InputBorder.none,
@@ -87,23 +88,23 @@ class _FeedHeaderState extends State<FeedHeader> {
                     ),
                   ),
                   ),
-                  // 검색 버튼 (CSS: .search-btn) - 오른쪽 끝에 붙임
+                  // 검색 버튼 (돋보기 아이콘, 원형 배경 흰색)
                   Material(
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: _handleSearch,
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
-                        width: 40, // CSS: 2.5rem = 40px
+                        width: 40,
                         height: 40,
                         decoration: const BoxDecoration(
-                          color: Color(0xFFF0F2FF), // CSS: background: #f0f2ff
+                          color: Colors.white, // 원형 배경 흰색 (옅은 파란색 → 흰색)
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
                           Icons.search,
-                          color: AppTheme.primaryColor, // CSS: color: #667eea
-                          size: 20, // 아이콘 크기
+                          color: AppTheme.primaryColor, // 돋보기 모양 짙은 파란색
+                          size: 20,
                         ),
                       ),
                     ),

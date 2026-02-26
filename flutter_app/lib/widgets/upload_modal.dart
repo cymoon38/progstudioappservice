@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+
 import '../services/auth_service.dart';
 import '../services/data_service.dart';
 import '../theme/app_theme.dart';
@@ -238,123 +240,99 @@ class _UploadModalState extends State<UploadModal> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 작품 유형 선택 (CSS: .type-selection)
-                      Container(
-                        padding: const EdgeInsets.all(16), // CSS: padding: 1rem
-                        margin: const EdgeInsets.only(bottom: 24), // CSS: margin-bottom: 1.5rem
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8F9FF), // CSS: background: #f8f9ff
-                          borderRadius: BorderRadius.circular(10), // CSS: border-radius: 10px
+                      // 작품 유형 선택 (박스 없이)
+                      Text(
+                        '작품 유형',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textPrimary,
+                          fontSize: 16,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8ECF4),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
                           children: [
-                            // 레이블 (CSS: .type-label)
-                            Row(
-                              children: [
-                                Text(
-                                  '작품 유형',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600, // CSS: font-weight: 600
-                                    color: AppTheme.textPrimary, // CSS: color: #333
-                                    fontSize: 16, // CSS: 1rem
-                                  ),
-                                ),
-                                const Text(
-                                  ' *',
-                                  style: TextStyle(color: Color(0xFFE74C3C)), // CSS: color: #e74c3c
-                                ),
-                              ],
+                            Expanded(
+                              child: _TypeTab(
+                                label: '창작',
+                                isSelected: _postType == 'original',
+                                onTap: () {
+                                  setState(() {
+                                    _postType = 'original';
+                                    _originalImage = null;
+                                  });
+                                },
+                              ),
                             ),
-                            const SizedBox(height: 12), // CSS: margin-bottom: 0.75rem
-                            // 라디오 그룹 (CSS: .radio-group)
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _RadioOption(
-                                    label: '창작',
-                                    value: 'original',
-                                    groupValue: _postType,
-                                    onChanged: (value) {
-                                      setState(() {
-                                        _postType = value!;
-                                        if (_postType == 'original') {
-                                          _originalImage = null;
-                                        }
-                                      });
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 24), // CSS: gap: 1.5rem
-                                Expanded(
-                                  child: _RadioOption(
-                                    label: '모작',
-                                    value: 'recreation',
-                                    groupValue: _postType,
-                                    onChanged: (value) {
-                                      setState(() {
-                                        _postType = value!;
-                                      });
-                                    },
-                                  ),
-                                ),
-                              ],
+                            Expanded(
+                              child: _TypeTab(
+                                label: '모작',
+                                isSelected: _postType == 'recreation',
+                                onTap: () {
+                                  setState(() => _postType = 'recreation');
+                                },
+                              ),
                             ),
                           ],
                         ),
                       ),
+                      const SizedBox(height: 24),
                       // 본인이 그린 그림 업로드 (CSS: .upload-area)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // 레이블 (CSS: .upload-label-text)
-                          Row(
-                            children: [
-                              Text(
-                                '본인이 그린 그림',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600, // CSS: font-weight: 600
-                                  color: AppTheme.textPrimary, // CSS: color: #333
-                                  fontSize: 16, // CSS: 1rem
-                                ),
-                              ),
-                              const Text(
-                                ' *',
-                                style: TextStyle(color: Color(0xFFE74C3C)), // CSS: color: #e74c3c
-                              ),
-                            ],
+                          Text(
+                            '그림',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimary,
+                              fontSize: 16,
+                            ),
                           ),
                           const SizedBox(height: 8), // CSS: margin-bottom: 0.5rem
                           // 업로드 라벨 (CSS: .upload-label)
                           GestureDetector(
                             onTap: _pickImage,
                             child: Container(
-                              width: double.infinity, // 다른 입력 필드와 동일한 너비
-                              padding: const EdgeInsets.all(48), // CSS: padding: 3rem
+                              width: double.infinity,
+                              padding: _selectedImage != null
+                                  ? EdgeInsets.zero
+                                  : const EdgeInsets.all(48),
                               decoration: BoxDecoration(
                                 border: Border.all(
-                                  color: AppTheme.primaryColor, // CSS: border-color: #667eea
+                                  color: AppTheme.primaryColor,
                                   width: 2,
-                                  style: BorderStyle.solid, // CSS: dashed는 Flutter에서 지원하지 않으므로 solid 사용
+                                  style: BorderStyle.solid,
                                 ),
-                                borderRadius: BorderRadius.circular(10), // CSS: border-radius: 10px
-                                color: const Color(0xFFF8F9FF), // CSS: background: #f8f9ff
+                                borderRadius: BorderRadius.circular(10),
+                                color: const Color(0xFFF8F9FF),
                               ),
                               child: _selectedImage != null
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Stack(
-                                        children: [
-                                          Image.file(
-                                            _selectedImage!,
-                                            fit: BoxFit.cover,
-                                            height: 200,
-                                            width: double.infinity,
-                                          ),
-                                          Positioned(
-                                            top: 8,
-                                            right: 8,
-                                            child: Material(
+                                  ? SizedBox(
+                                      height: 240,
+                                      width: double.infinity,
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            Image.file(
+                                              _selectedImage!,
+                                              fit: BoxFit.cover,
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                            ),
+                                            Positioned(
+                                              top: 8,
+                                              right: 8,
+                                              child: Material(
                                               color: Colors.transparent,
                                               child: InkWell(
                                                 onTap: () {
@@ -380,7 +358,8 @@ class _UploadModalState extends State<UploadModal> {
                                           ),
                                         ],
                                       ),
-                                    )
+                                    ),
+                                  )
                                   : Column(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -410,28 +389,22 @@ class _UploadModalState extends State<UploadModal> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Text(
-                                  '원본 그림',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textPrimary,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                const Text(
-                                  ' *',
-                                  style: TextStyle(color: Color(0xFFE74C3C)),
-                                ),
-                              ],
+                            Text(
+                              '원본 그림',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textPrimary,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             GestureDetector(
                               onTap: _pickOriginalImage,
                               child: Container(
-                                width: double.infinity, // 다른 입력 필드와 동일한 너비
-                                padding: const EdgeInsets.all(48),
+                                width: double.infinity,
+                                padding: _originalImage != null
+                                    ? EdgeInsets.zero
+                                    : const EdgeInsets.all(48),
                                 decoration: BoxDecoration(
                                   border: Border.all(
                                     color: AppTheme.primaryColor,
@@ -442,19 +415,23 @@ class _UploadModalState extends State<UploadModal> {
                                   color: const Color(0xFFF8F9FF),
                                 ),
                                 child: _originalImage != null
-                                    ? ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Stack(
-                                          children: [
-                                            Image.file(
-                                              _originalImage!,
-                                              fit: BoxFit.cover,
-                                              height: 200,
-                                              width: double.infinity,
-                                            ),
-                                            Positioned(
-                                              top: 8,
-                                              right: 8,
+                                    ? SizedBox(
+                                        height: 240,
+                                        width: double.infinity,
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              Image.file(
+                                                _originalImage!,
+                                                fit: BoxFit.cover,
+                                                width: double.infinity,
+                                                height: double.infinity,
+                                              ),
+                                              Positioned(
+                                                top: 8,
+                                                right: 8,
                                               child: Material(
                                                 color: Colors.transparent,
                                                 child: InkWell(
@@ -481,7 +458,8 @@ class _UploadModalState extends State<UploadModal> {
                                             ),
                                           ],
                                         ),
-                                      )
+                                      ),
+                                    )
                                     : Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
@@ -492,7 +470,7 @@ class _UploadModalState extends State<UploadModal> {
                                           ),
                                           const SizedBox(height: 8),
                                           const Text(
-                                            '원본 그림을 선택하세요',
+                                            '이미지를 선택하세요',
                                             style: TextStyle(
                                               fontSize: 16,
                                               color: AppTheme.textPrimary,
@@ -512,27 +490,24 @@ class _UploadModalState extends State<UploadModal> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Text(
-                                  '제목',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600, // CSS: font-weight: 600
-                                    color: AppTheme.textPrimary, // CSS: color: #333
-                                    fontSize: 16, // CSS: 1rem
-                                  ),
-                                ),
-                                const Text(
-                                  ' *',
-                                  style: TextStyle(color: Color(0xFFE74C3C)), // CSS: color: #e74c3c
-                                ),
-                              ],
+                            Text(
+                              '제목',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textPrimary,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8), // CSS: margin-bottom: 0.5rem
                             TextFormField(
                               controller: _titleController,
                               decoration: InputDecoration(
-                                hintText: '작품 제목을 입력하세요...',
+                                hintText: '작품 제목을 입력하세요',
+                                hintStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w300,
+                                  color: Color(0xFF9CA3AF),
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10), // CSS: border-radius: 10px
                                   borderSide: const BorderSide(
@@ -575,7 +550,12 @@ class _UploadModalState extends State<UploadModal> {
                         child: TextField(
                           controller: _captionController,
                           decoration: InputDecoration(
-                            hintText: '그림 설명을 입력하세요...',
+                            hintText: '그림 설명을 입력하세요',
+                            hintStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w300,
+                              color: Color(0xFF9CA3AF),
+                            ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10), // CSS: border-radius: 10px
                               borderSide: const BorderSide(
@@ -612,7 +592,7 @@ class _UploadModalState extends State<UploadModal> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '태그 (최대 5개, 쉼표로 구분)',
+                              '태그',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600, // CSS: font-weight: 600
                                 color: AppTheme.textPrimary, // CSS: color: #333
@@ -623,7 +603,12 @@ class _UploadModalState extends State<UploadModal> {
                             TextFormField(
                               controller: _tagsController,
                               decoration: InputDecoration(
-                                hintText: '예: 그림, 디지털아트, 일러스트, 캐릭터, 판타지',
+                                hintText: '그림,일러스트,캐릭터,손그림...',
+                                hintStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w300,
+                                  color: Color(0xFF9CA3AF),
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10), // CSS: border-radius: 10px
                                   borderSide: const BorderSide(
@@ -656,7 +641,7 @@ class _UploadModalState extends State<UploadModal> {
                             Padding(
                               padding: const EdgeInsets.only(top: 8), // CSS: margin-top: 0.5rem
                               child: Text(
-                                '태그는 쉼표(,)로 구분하여 입력하세요. 최대 5개까지 입력 가능합니다.',
+                                '쉼표(,)로 구분하여 5개 까지만 입력해주세요',
                                 style: TextStyle(
                                   color: AppTheme.textSecondary, // CSS: color: #666
                                   fontSize: 13.6, // CSS: 0.85rem ≈ 13.6px
@@ -666,28 +651,24 @@ class _UploadModalState extends State<UploadModal> {
                           ],
                         ),
                       ),
-                      // 업로드 버튼 (CSS: .btn-primary)
+                      // 업로드 버튼 (아이템 사용하기 버튼과 동일 스타일)
                       SizedBox(
                         width: double.infinity,
-                        child: Container(
-                          decoration: AppTheme.gradientButtonDecoration,
-                          child: ElevatedButton(
-                            onPressed: _isUploading ? null : _uploadPost,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: const EdgeInsets.symmetric(vertical: 16), // CSS: padding
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(25), // CSS: border-radius: 25px
-                              ),
+                        child: ElevatedButton(
+                          onPressed: _isUploading ? null : _uploadPost,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            child: Text(
-                              _isUploading ? '업로드 중... (약 10초 소요)' : '업로드',
-                              style: const TextStyle(
-                                color: Colors.white, // CSS: color: white
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          ),
+                          child: Text(
+                            _isUploading ? '업로드 중... (약 10초 소요)' : '업로드',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -698,6 +679,51 @@ class _UploadModalState extends State<UploadModal> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// 작품 유형 탭 (상용 앱 세그먼트 스타일)
+class _TypeTab extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _TypeTab({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.primaryColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Center(
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected ? Colors.white : const Color(0xFF6B7280),
+              ),
+              child: Text(label),
+            ),
+          ),
         ),
       ),
     );

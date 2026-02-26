@@ -109,40 +109,19 @@ class CustomTopNavbar extends StatelessWidget implements PreferredSizeWidget {
                                         ),
                                       ),
                                     ),
-                                    // 알림 배지 (CSS: .notification-badge)
+                                    // 알림 배지 (빨간 점, 종 오른쪽 위 곡선에 딱 붙임)
                                     if (unreadCount > 0)
                                       Positioned(
-                                        top: -1,
-                                        right: -1,
+                                        top: 5,
+                                        right: 8,
                                         child: Container(
-                                          width: 20, // CSS: 20px
-                                          height: 20,
+                                          width: 10,
+                                          height: 10,
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFFF6B6B), // CSS: #ff6b6b
+                                            color: const Color(0xFFFF6B6B),
                                             shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: Colors.white,
-                                              width: 2,
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black.withOpacity(0.2),
-                                                blurRadius: 4,
-                                                offset: const Offset(0, 2),
-                                              ),
-                                            ],
                                           ),
-                                          child: Center(
-                                            child: Text(
-                                              unreadCount > 99 ? '99+' : unreadCount.toString(),
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 12, // CSS: 0.75rem
-                                                fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
+                                        ),
                                       ),
                                   ],
                                 );

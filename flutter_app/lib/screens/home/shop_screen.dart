@@ -443,6 +443,8 @@ class _SelectPostForItemScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text('$itemName 사용할 게시물 선택'),
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         elevation: 0,
         foregroundColor: AppTheme.textPrimary,
       ),

@@ -520,7 +520,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(title: const Text('게시물 상세')),
-        backgroundColor: AppTheme.backgroundColor,
+        backgroundColor: Colors.white,
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -528,7 +528,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_post == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('게시물')),
-        backgroundColor: AppTheme.backgroundColor,
+        backgroundColor: Colors.white,
         body: const Center(child: Text('게시물을 찾을 수 없습니다.')),
       );
     }
@@ -781,6 +781,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ],
                 const SizedBox(height: 24),
               ],
+              // 공지사항: 제목과 본문 구분선
+              if (post.type == 'notice') ...[
+                const SizedBox(height: 16),
+                const Divider(
+                  color: Color(0xFFE6E8F0),
+                  height: 1,
+                  thickness: 1,
+                ),
+                const SizedBox(height: 16),
+              ],
               // 설명 - 여백 있음
               if (post.caption != null && post.caption!.isNotEmpty)
                 Padding(
@@ -848,6 +858,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           maxLines: 2,
                           decoration: InputDecoration(
                             hintText: '댓글을 입력하세요...',
+                            hintStyle: const TextStyle(
+                              fontWeight: FontWeight.w300,
+                              color: Color(0xFF9CA3AF),
+                            ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -859,19 +873,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       const SizedBox(height: 8),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Container(
-                          decoration: AppTheme.gradientButtonDecoration,
+                        child: SizedBox(
+                          width: double.infinity,
                           child: ElevatedButton(
                             onPressed: _addComment,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              minimumSize: const Size(double.infinity, 48),
+                              backgroundColor: AppTheme.primaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(25),
+                                borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                            child: const Text('댓글 작성'),
+                            child: const Text('댓글 작성', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                           ),
                         ),
                       ),
@@ -1035,6 +1049,100 @@ class _CommentButton extends StatelessWidget {
   }
 }
 
+/// 가로 스크롤 필요 시 날짜가 내용과 함께 스크롤, 불필요 시 날짜는 오른쪽 끝 고정
+class _AdaptiveHeaderRow extends StatefulWidget {
+  final List<Widget> leftContent;
+  final Widget? dateWidget;
+
+  const _AdaptiveHeaderRow({
+    required this.leftContent,
+    this.dateWidget,
+  });
+
+  @override
+  State<_AdaptiveHeaderRow> createState() => _AdaptiveHeaderRowState();
+}
+
+class _AdaptiveHeaderRowState extends State<_AdaptiveHeaderRow> {
+  bool? _needsScroll;
+  final GlobalKey _measureKey = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (_needsScroll == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final box = _measureKey.currentContext?.findRenderObject() as RenderBox?;
+            if (box != null && mounted) {
+              final contentWidth = box.size.width;
+              if (contentWidth > constraints.maxWidth) {
+                setState(() => _needsScroll = true);
+              } else {
+                setState(() => _needsScroll = false);
+              }
+            }
+          });
+        }
+
+        final fullContent = [
+          ...widget.leftContent,
+          if (widget.dateWidget != null) ...[
+            const SizedBox(width: 8),
+            widget.dateWidget!,
+          ],
+        ];
+
+        // 초기 또는 스크롤 필요: 가로 스크롤 (날짜가 내용과 함께 스크롤)
+        if (_needsScroll != false) {
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: fullContent,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              // 측정용 (화면 밖)
+              if (_needsScroll == null)
+                Positioned(
+                  left: -9999,
+                  top: 0,
+                  child: Row(
+                    key: _measureKey,
+                    mainAxisSize: MainAxisSize.min,
+                    children: fullContent,
+                  ),
+                ),
+            ],
+          );
+        }
+
+        // 스크롤 불필요: 날짜 오른쪽 끝 고정
+        return Row(
+          children: [
+            Expanded(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: widget.leftContent,
+              ),
+            ),
+            if (widget.dateWidget != null) widget.dateWidget!,
+          ],
+        );
+      },
+    );
+  }
+}
+
 // 댓글 아이템 (재귀적 답글 포함)
 class _CommentItem extends StatelessWidget {
   final Comment comment;
@@ -1099,165 +1207,121 @@ class _CommentItem extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 댓글 메인
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 댓글 헤더
-              Row(
+          // 댓글 메인 (클릭 시 답글 작성 폼 토글)
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: authService.isLoggedIn ? onToggleReply : null,
+              borderRadius: BorderRadius.circular(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    comment.author,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.primaryColor,
-                      fontSize: 16,
-                    ),
-                  ),
-                  // 채택 표시 - 아이디 옆에 표시
-                  if (isAccepted) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.check_circle,
-                            color: Colors.white,
-                            size: 14,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '채택됨',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (comment.acceptedCoinAmount != null) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '${comment.acceptedCoinAmount}코인',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                  // 채택하기 버튼 - 게시물 작성자만, 아직 채택되지 않은 경우만, 본인 댓글 아님, 최대 3명까지
-                  if (canAccept && acceptedCount < 3) ...[
-                    const SizedBox(width: 12),
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => _showAcceptCommentDialog(context),
-                        borderRadius: BorderRadius.circular(15),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            gradient: AppTheme.primaryGradient,
-                            borderRadius: BorderRadius.circular(15),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.primaryColor.withOpacity(0.3),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Text(
-                            '채택하기',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                  // 댓글 헤더 (스크롤 불필요 시 날짜 오른쪽 끝, 필요 시 날짜 포함 가로 스크롤)
+                  _AdaptiveHeaderRow(
+                    leftContent: [
+                      Text(
+                        comment.author,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.primaryColor,
+                          fontSize: 16,
                         ),
                       ),
+                      PopupMenuButton<String>(
+                        icon: Icon(Icons.more_vert, color: const Color(0xFFB0B0B0), size: 16),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                        iconSize: 16,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        itemBuilder: (context) {
+                          final items = <PopupMenuItem<String>>[];
+                          if (canAccept && acceptedCount < 3) {
+                            items.add(const PopupMenuItem(value: 'accept', child: Text('채택하기')));
+                          }
+                          items.add(const PopupMenuItem(value: 'report', child: Text('신고하기')));
+                          if (isOwner) {
+                            items.add(const PopupMenuItem(value: 'delete', child: Text('삭제하기')));
+                          }
+                          return items;
+                        },
+                        onSelected: (value) {
+                          if (value == 'accept') _showAcceptCommentDialog(context);
+                          if (value == 'report') {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('신고 기능은 준비 중입니다.')),
+                            );
+                          }
+                          if (value == 'delete') onDeleteComment();
+                        },
+                      ),
+                      if (isAccepted) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.check_circle,
+                                color: Colors.white,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '채택됨',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (comment.acceptedCoinAmount != null) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${comment.acceptedCoinAmount}코인',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                    dateWidget: Text(
+                      DateFormat('yyyy.MM.dd').format(comment.createdAt),
+                      style: TextStyle(
+                        color: AppTheme.textTertiary,
+                        fontSize: 13.6,
+                      ),
                     ),
-                  ],
-                  const Spacer(),
+                  ),
+              const SizedBox(height: 8),
+                  // 댓글 내용
                   Text(
-                    DateFormat('yyyy.MM.dd').format(comment.createdAt),
-                    style: TextStyle(
-                      color: AppTheme.textTertiary,
-                      fontSize: 13.6,
+                    comment.text,
+                    style: const TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 16,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              // 댓글 내용
-              Text(
-                comment.text,
-                style: const TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-          // 댓글 액션
-          if (authService.isLoggedIn || isOwner) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (authService.isLoggedIn)
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: onToggleReply,
-                      borderRadius: BorderRadius.circular(4),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 0, vertical: 4),
-                        child: Text(
-                          '답글',
-                          style: TextStyle(
-                            color: AppTheme.primaryColor,
-                            fontSize: 14.4,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 8),
-                if (isOwner)
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: onDeleteComment,
-                      borderRadius: BorderRadius.circular(5),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.delete_outline,
-                          size: 16,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
             ),
-          ],
+          ),
           // 답글 입력 폼
           if (showReplyForm && replyController != null) ...[
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFFF0F2FF),
+                color: Color.fromARGB(255, 255, 255, 255),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: const Color(0xFFD0D2FF),
@@ -1271,7 +1335,11 @@ class _CommentItem extends StatelessWidget {
                     controller: replyController,
                     maxLines: 2,
                     decoration: InputDecoration(
-                      hintText: '댓글을 입력하세요...',
+                      hintText: '댓글을 입력하세요',
+                      hintStyle: const TextStyle(
+                        fontWeight: FontWeight.w300,
+                        color: Color(0xFF9CA3AF),
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(5),
                       ),
@@ -1284,26 +1352,19 @@ class _CommentItem extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Container(
-                          decoration: AppTheme.gradientButtonDecoration,
-                          child: ElevatedButton(
-                            onPressed: onAddReply,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(25),
-                              ),
+                        child: ElevatedButton(
+                          onPressed: onAddReply,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            child: const Text(
-                              '작성',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14.4,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                          ),
+                          child: const Text(
+                            '작성',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
@@ -1321,15 +1382,15 @@ class _CommentItem extends StatelessWidget {
                               color: AppTheme.primaryColor,
                               width: 2,
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(25),
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
                           child: const Text(
                             '취소',
                             style: TextStyle(
-                              fontSize: 14.4,
+                              fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -1362,23 +1423,34 @@ class _CommentItem extends StatelessWidget {
                   final reply = entry.value;
                   final path = [replyIndex];
                   final key = 'comment_${commentIndex}_${path.join('_')}';
-                  return _ReplyItem(
-                    reply: reply,
-                    commentIndex: commentIndex,
-                    replyPath: path,
-                    onToggleReply: onToggleNestedReply ?? (path) {},
-                    onAddReply: onAddNestedReply ?? (path) {},
-                    onDeleteReply: onDeleteReply,
-                    showReplyForm: showNestedReplyForms?[key] ?? false,
-                    replyController: nestedReplyControllers?[key],
-                    postId: postId,
-                    postAuthor: postAuthor,
-                    postAuthorUid: postAuthorUid,
-                    acceptedCount: acceptedCount,
-                    onPostUpdated: onPostUpdated,
-                    showNestedReplyForms: showNestedReplyForms,
-                    nestedReplyControllers: nestedReplyControllers,
-                    onReplyAccepted: onReplyAccepted, // _CommentItem에서 전달받은 콜백 전달
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (replyIndex > 0)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(height: 1, thickness: 1, color: Color(0xFFE6E8F0)),
+                        ),
+                      _ReplyItem(
+                        reply: reply,
+                        commentIndex: commentIndex,
+                        replyPath: path,
+                        onToggleReply: onToggleNestedReply ?? (path) {},
+                        onAddReply: onAddNestedReply ?? (path) {},
+                        onDeleteReply: onDeleteReply,
+                        showReplyForm: showNestedReplyForms?[key] ?? false,
+                        replyController: nestedReplyControllers?[key],
+                        postId: postId,
+                        postAuthor: postAuthor,
+                        postAuthorUid: postAuthorUid,
+                        acceptedCount: acceptedCount,
+                        onPostUpdated: onPostUpdated,
+                        showNestedReplyForms: showNestedReplyForms,
+                        nestedReplyControllers: nestedReplyControllers,
+                        onReplyAccepted: onReplyAccepted,
+                      ),
+                    ],
                   );
                 }).toList(),
               ),
@@ -1560,31 +1632,27 @@ class _CommentItem extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         flex: 2,
-                        child: Container(
-                          decoration: AppTheme.gradientButtonDecoration,
-                          child: ElevatedButton(
-                            onPressed: selectedCoinAmount == null
-                                ? null
-                                : () async {
-                                    Navigator.of(dialogContext).pop();
-                                    await _acceptComment(context, selectedCoinAmount!);
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                              disabledBackgroundColor: Colors.grey[300],
+                        child: ElevatedButton(
+                          onPressed: selectedCoinAmount == null
+                              ? null
+                              : () async {
+                                  Navigator.of(dialogContext).pop();
+                                  await _acceptComment(context, selectedCoinAmount!);
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            child: const Text(
-                              '채택하기',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
+                            disabledBackgroundColor: Colors.grey[300],
+                          ),
+                          child: const Text(
+                            '채택하기',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1714,106 +1782,103 @@ class _ReplyItem extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 답글 내용
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+          // 답글 내용 (클릭 시 답글 작성 폼 토글)
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: authService.isLoggedIn ? () => onToggleReply(replyPath) : null,
+              borderRadius: BorderRadius.circular(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    reply.author,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.primaryColor,
-                      fontSize: 16,
-                    ),
-                  ),
-                  // 채택 표시 - 아이디 옆에 표시
-                  if (isAccepted) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.check_circle,
-                            color: Colors.white,
-                            size: 14,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '채택됨',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (reply.acceptedCoinAmount != null) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '${reply.acceptedCoinAmount}코인',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                  // 채택하기 버튼 - 게시물 작성자만, 아직 채택되지 않은 경우만, 본인 대댓글 아님, 최대 3명까지
-                  if (canAccept && acceptedCount < 3) ...[
-                    const SizedBox(width: 12),
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => _showAcceptReplyDialog(context),
-                        borderRadius: BorderRadius.circular(15),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            gradient: AppTheme.primaryGradient,
-                            borderRadius: BorderRadius.circular(15),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.primaryColor.withOpacity(0.3),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Text(
-                            '채택하기',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                  // 답글 헤더 (스크롤 불필요 시 날짜 오른쪽 끝, 필요 시 날짜 포함 가로 스크롤)
+                  _AdaptiveHeaderRow(
+                    leftContent: [
+                      Text(
+                        reply.author,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.primaryColor,
+                          fontSize: 16,
                         ),
                       ),
-                    ),
-                  ],
-                  // 채택된 경우 날짜 표시하지 않음 (overflow 방지)
-                  if (!isAccepted) ...[
-                  const SizedBox(width: 12),
-                  Text(
-                    DateFormat('yyyy.MM.dd').format(reply.createdAt),
-                    style: TextStyle(
-                      color: AppTheme.textTertiary,
-                      fontSize: 13.6,
-                    ),
+                      PopupMenuButton<String>(
+                        icon: Icon(Icons.more_vert, color: const Color(0xFFB0B0B0), size: 16),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                        iconSize: 16,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        itemBuilder: (context) {
+                          final items = <PopupMenuItem<String>>[];
+                          if (canAccept && acceptedCount < 3) {
+                            items.add(const PopupMenuItem(value: 'accept', child: Text('채택하기')));
+                          }
+                          items.add(const PopupMenuItem(value: 'report', child: Text('신고하기')));
+                          if (isOwner) {
+                            items.add(const PopupMenuItem(value: 'delete', child: Text('삭제하기')));
+                          }
+                          return items;
+                        },
+                        onSelected: (value) {
+                          if (value == 'accept') _showAcceptReplyDialog(context);
+                          if (value == 'report') {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('신고 기능은 준비 중입니다.')),
+                            );
+                          }
+                          if (value == 'delete') onDeleteReply(replyPath);
+                        },
+                      ),
+                      if (isAccepted) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.check_circle,
+                                color: Colors.white,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '채택됨',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (reply.acceptedCoinAmount != null) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${reply.acceptedCoinAmount}코인',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                    dateWidget: isAccepted
+                        ? null
+                        : Text(
+                            DateFormat('yyyy.MM.dd').format(reply.createdAt),
+                            style: TextStyle(
+                              color: AppTheme.textTertiary,
+                              fontSize: 13.6,
+                            ),
+                          ),
                   ),
-                  ],
-                ],
-              ),
               const SizedBox(height: 8),
               Text(
                 reply.text,
@@ -1824,49 +1889,8 @@ class _ReplyItem extends StatelessWidget {
               ),
             ],
           ),
-          // 답글 액션
-          if (authService.isLoggedIn || isOwner) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (authService.isLoggedIn)
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () => onToggleReply(replyPath),
-                      borderRadius: BorderRadius.circular(4),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 0, vertical: 4),
-                        child: Text(
-                          '답글',
-                          style: TextStyle(
-                            color: AppTheme.primaryColor,
-                            fontSize: 14.4,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 8),
-                if (isOwner)
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () => onDeleteReply(replyPath),
-                      borderRadius: BorderRadius.circular(5),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(
-                          Icons.delete_outline,
-                          size: 16,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
             ),
-          ],
+          ),
           // 답글 입력 폼
           if (showReplyForm && replyController != null) ...[
             const SizedBox(height: 12),
@@ -1888,6 +1912,10 @@ class _ReplyItem extends StatelessWidget {
                     maxLines: 2,
                     decoration: InputDecoration(
                       hintText: '댓글을 입력하세요...',
+                      hintStyle: const TextStyle(
+                        fontWeight: FontWeight.w300,
+                        color: Color(0xFF9CA3AF),
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(5),
                       ),
@@ -1900,26 +1928,19 @@ class _ReplyItem extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Container(
-                          decoration: AppTheme.gradientButtonDecoration,
-                          child: ElevatedButton(
-                            onPressed: () => onAddReply(replyPath),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(25),
-                              ),
+                        child: ElevatedButton(
+                          onPressed: () => onAddReply(replyPath),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            child: const Text(
-                              '작성',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14.4,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                          ),
+                          child: const Text(
+                            '작성',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
@@ -1937,15 +1958,15 @@ class _ReplyItem extends StatelessWidget {
                               color: AppTheme.primaryColor,
                               width: 2,
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(25),
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
                           child: const Text(
                             '취소',
                             style: TextStyle(
-                              fontSize: 14.4,
+                              fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -1970,23 +1991,34 @@ class _ReplyItem extends StatelessWidget {
                   final nestedReply = entry.value;
                   final nestedPath = [...replyPath, nestedIndex];
                   final key = 'comment_${commentIndex}_${nestedPath.join('_')}';
-                  return _ReplyItem(
-                    reply: nestedReply,
-                    commentIndex: commentIndex,
-                    replyPath: nestedPath,
-                    onToggleReply: onToggleReply,
-                    onAddReply: onAddReply,
-                    onDeleteReply: onDeleteReply,
-                    showReplyForm: showNestedReplyForms?[key] ?? false,
-                    replyController: nestedReplyControllers?[key],
-                    showNestedReplyForms: showNestedReplyForms,
-                    nestedReplyControllers: nestedReplyControllers,
-                    postId: postId,
-                    postAuthor: postAuthor,
-                    postAuthorUid: postAuthorUid,
-                    acceptedCount: acceptedCount,
-                    onPostUpdated: onPostUpdated,
-                    onReplyAccepted: onReplyAccepted, // 상위에서 전달받은 콜백 전달
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (nestedIndex > 0)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(height: 1, thickness: 1, color: Color(0xFFE6E8F0)),
+                        ),
+                      _ReplyItem(
+                        reply: nestedReply,
+                        commentIndex: commentIndex,
+                        replyPath: nestedPath,
+                        onToggleReply: onToggleReply,
+                        onAddReply: onAddReply,
+                        onDeleteReply: onDeleteReply,
+                        showReplyForm: showNestedReplyForms?[key] ?? false,
+                        replyController: nestedReplyControllers?[key],
+                        showNestedReplyForms: showNestedReplyForms,
+                        nestedReplyControllers: nestedReplyControllers,
+                        postId: postId,
+                        postAuthor: postAuthor,
+                        postAuthorUid: postAuthorUid,
+                        acceptedCount: acceptedCount,
+                        onPostUpdated: onPostUpdated,
+                        onReplyAccepted: onReplyAccepted,
+                      ),
+                    ],
                   );
                 }).toList(),
               ),
@@ -2168,31 +2200,27 @@ class _ReplyItem extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         flex: 2,
-                        child: Container(
-                          decoration: AppTheme.gradientButtonDecoration,
-                          child: ElevatedButton(
-                            onPressed: selectedCoinAmount == null
-                                ? null
-                                : () async {
-                                    Navigator.of(dialogContext).pop();
-                                    await _acceptReply(context, selectedCoinAmount!);
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                              disabledBackgroundColor: Colors.grey[300],
+                        child: ElevatedButton(
+                          onPressed: selectedCoinAmount == null
+                              ? null
+                              : () async {
+                                  Navigator.of(dialogContext).pop();
+                                  await _acceptReply(context, selectedCoinAmount!);
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            child: const Text(
-                              '채택하기',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
+                            disabledBackgroundColor: Colors.grey[300],
+                          ),
+                          child: const Text(
+                            '채택하기',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),

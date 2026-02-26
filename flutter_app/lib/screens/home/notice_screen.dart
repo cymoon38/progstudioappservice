@@ -182,7 +182,7 @@ class _NoticeScreenState extends State<NoticeScreen> {
     final isMobile = MediaQuery.of(context).size.width <= 768;
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.white,
       body: SafeArea(
         bottom: false,
         child: Consumer<DataService>(
@@ -196,20 +196,19 @@ class _NoticeScreenState extends State<NoticeScreen> {
                   parent: ClampingScrollPhysics(),
                 ),
                 slivers: [
-                  // 헤더
+                  // 헤더 (화살표 나가기 + 운영자 버튼)
                   SliverToBoxAdapter(
                     child: Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            '공지사항',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary,
-                            ),
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            onPressed: () => Navigator.of(context).pop(),
+                            color: AppTheme.textPrimary,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                           ),
                           // 운영자만 공지 작성 및 코인 내역 버튼 표시
                           Consumer<AuthService>(
@@ -288,7 +287,39 @@ class _NoticeScreenState extends State<NoticeScreen> {
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
                             final notice = notices[index];
-                            return _NoticeCard(notice: notice);
+                            final isFirst = index == 0;
+                            final isLast = index == notices.length - 1;
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // 최상단 글 상단 구분선 / 글 사이 구분선
+                                if (isFirst || index > 0)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+                                    child: Container(
+                                      height: 1,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE6E8F0),
+                                        borderRadius: BorderRadius.circular(1),
+                                      ),
+                                    ),
+                                  ),
+                                _NoticeCard(notice: notice),
+                                // 최하단 글 하단 구분선
+                                if (isLast)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+                                    child: Container(
+                                      height: 1,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFE6E8F0),
+                                        borderRadius: BorderRadius.circular(1),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
                           },
                           childCount: notices.length,
                         ),
@@ -318,19 +349,7 @@ class _NoticeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE6E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
       child: InkWell(
         onTap: () {
           Navigator.push(
@@ -342,33 +361,16 @@ class _NoticeCard extends StatelessWidget {
         },
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 공지 배지
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  '공지',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              // 제목
+              // 제목 (목록에서는 얇은 글씨)
               Text(
                 notice.title,
                 style: const TextStyle(
                   fontSize: 18,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w400,
                   color: AppTheme.textPrimary,
                 ),
                 maxLines: 2,

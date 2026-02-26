@@ -553,7 +553,7 @@ class _MissionScreenState extends State<MissionScreen> {
     final isMobile = MediaQuery.of(context).size.width <= 768;
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.white,
       appBar: null, // 상단 네비게이션은 HomeScreen에서 처리
       body: SafeArea(
         bottom: false, // 하단 SafeArea는 하단바가 처리

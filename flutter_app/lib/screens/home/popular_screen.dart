@@ -113,6 +113,7 @@ class _PopularScreenState extends State<PopularScreen> {
                                           hintStyle: TextStyle(
                                             color: AppTheme.textTertiary,
                                             fontSize: 15.2,
+                                            fontWeight: FontWeight.w200,
                                           ),
                                           border: InputBorder.none,
                                           enabledBorder: InputBorder.none,
@@ -139,7 +140,7 @@ class _PopularScreenState extends State<PopularScreen> {
                                         width: 40,
                                         height: 40,
                                         decoration: const BoxDecoration(
-                                          color: Color(0xFFF0F2FF),
+                                          color: Colors.white,
                                           shape: BoxShape.circle,
                                         ),
                                         child: const Icon(
@@ -255,12 +256,17 @@ class _PopularPostCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                        Text(
-                          post.author,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: isViewed ? const Color(0xFF999999) : AppTheme.textPrimary,
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Text(
+                            post.author,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: isViewed ? const Color(0xFF999999) : AppTheme.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.visible,
                           ),
                         ),
                         Text(
@@ -287,18 +293,21 @@ class _PopularPostCard extends StatelessWidget {
                   ],
                 ),
               ),
-                // 제목 (CSS: .post-title)
+                // 제목 (CSS: .post-title) - 긴 제목은 가로 스크롤
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(
-                  post.title,
-                  style: TextStyle(
-                    fontSize: 17.6,
-                    fontWeight: FontWeight.w600,
-                    color: isViewed ? const Color(0xFF666666) : AppTheme.textPrimary,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Text(
+                    post.title,
+                    style: TextStyle(
+                      fontSize: 17.6,
+                      fontWeight: FontWeight.w600,
+                      color: isViewed ? const Color(0xFF666666) : AppTheme.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.visible,
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               // 액션 버튼 (CSS: .post-actions)
