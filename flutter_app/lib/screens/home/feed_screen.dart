@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:adpopcornreward/adpopcornreward.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/adpopcorn_config.dart';
+import '../../services/adpopcorn_ssp_state.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../services/viewed_posts_service.dart';
@@ -262,7 +266,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       parent: ClampingScrollPhysics(),
                     ),
                     slivers: [
-                      SliverToBoxAdapter(child: _PromoBanner()),
+                      SliverToBoxAdapter(child: _AdBannerSection()),
                       SliverToBoxAdapter(child: _FeatureIconsSection()),
                       SliverToBoxAdapter(child: _MissionPreviewSection()),
                       if (dataService.isLoading)
@@ -357,69 +361,115 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 }
 
-// 프로모션 배너
-class _PromoBanner extends StatelessWidget {
+// 네이티브 광고 (애드팝콘 SSP) - 상용: AppKey 123870086, Placement ID RMArXdt3NJV48Ph
+class _AdBannerSection extends StatefulWidget {
+  @override
+  State<_AdBannerSection> createState() => _AdBannerSectionState();
+}
+
+class _AdBannerSectionState extends State<_AdBannerSection> {
+  static const String _viewType = 'AdPopcornSSPNativeView';
+  static const String _appKey = '123870086';
+  static const String _placementId = 'RMArXdt3NJV48Ph';
+  /// SDK 요청용 높이 (가이드: Container height와 동일)
+  static const double _adHeight = 280.0;
+  /// 실제 표시 높이 (하단 CTA 버튼 영역 잘라서 숨김)
+  static const double _visibleHeight = 235.0;
+
+  bool _loadFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    adPopcornNativeAdLoadFailed.addListener(_onLoadFailedChanged);
+  }
+
+  void _onLoadFailedChanged() {
+    if (adPopcornNativeAdLoadFailed.value && mounted) {
+      setState(() => _loadFailed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    adPopcornNativeAdLoadFailed.removeListener(_onLoadFailedChanged);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: AppTheme.primaryGradient,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.05),
-            blurRadius: 16,
-            offset: Offset.zero,
-          ),
-          BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.12),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-          BoxShadow(
-            color: AppTheme.primaryColor.withOpacity(0.06),
-            blurRadius: 8,
-            offset: const Offset(2, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '캔버스 캐시',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+    if (_loadFailed) return const SizedBox.shrink();
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final adWidth = screenWidth - 32;
+
+    // 가이드: creationParams - appKey, placementId, width(Android), height(Android) / Container height와 동일
+    final creationParams = <String, dynamic>{
+      'appKey': _appKey,
+      'placementId': _placementId,
+      if (Platform.isAndroid) ...{
+        'width': adWidth.round(),
+        'height': _adHeight.round(),
+      },
+    };
+
+    if (Platform.isAndroid) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        width: double.infinity,
+        height: _visibleHeight,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: _adHeight,
+            child: AndroidView(
+              viewType: _viewType,
+              creationParams: creationParams,
+              creationParamsCodec: const StandardMessageCodec(),
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            '작품을 공유하세요',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.white,
+        ),
+      );
+    }
+    if (Platform.isIOS) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        width: double.infinity,
+        height: _visibleHeight,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: _adHeight,
+            child: UiKitView(
+              viewType: _viewType,
+              creationParams: creationParams,
+              creationParamsCodec: const StandardMessageCodec(),
             ),
           ),
-          const SizedBox(height: 14),
-          FilledButton(
-            onPressed: () {
-              // TODO: 시작하기 동작
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: AppTheme.textPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            child: const Text('시작하기'),
-          ),
-        ],
-      ),
-    );
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 
