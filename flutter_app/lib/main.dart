@@ -35,14 +35,21 @@ void main() async {
   }
 
   // 애드팝콘 SSP SDK 초기화 (상용: AppKey 123870086)
-  if (Platform.isAndroid) {
-    AdPopcornSSP.init('123870086');
-  } else if (Platform.isIOS) {
-    AdPopcornSSP.init('123870086');
-  }
-  if (kDebugMode) {
-    AdPopcornSSP.setLogLevel('Trace');
-    print('[AdPopcornSSP] 초기화 완료 (상용), 로그레벨=Trace');
+  // 앱 중단 원인 확인용: true로 두면 SSP 초기화 생략 (테스트 후 반드시 false로 복구)
+  const bool _skipSspInitForDebug = false;
+  // ignore: dead_code
+  if (!_skipSspInitForDebug) {
+    if (Platform.isAndroid) {
+      AdPopcornSSP.init('123870086');
+    } else if (Platform.isIOS) {
+      AdPopcornSSP.init('123870086');
+    }
+    if (kDebugMode) {
+      AdPopcornSSP.setLogLevel('Trace');
+      print('[AdPopcornSSP] 초기화 완료 (상용), 로그레벨=Trace');
+    }
+  } else if (kDebugMode) {
+    print('[AdPopcornSSP] 디버그: SSP 초기화 생략됨 (_skipSspInitForDebug=true)');
   }
   
   runApp(const MyApp());
@@ -70,23 +77,30 @@ class _MyAppState extends State<MyApp> {
   }
 
   static Future<dynamic> _eventHandleMethod(MethodCall call) async {
-    final arguments = call.arguments is Map ? Map.from(call.arguments as Map) : <String, dynamic>{};
-    final String placementId = arguments['placementId']?.toString() ?? _nativePlacementId;
+    try {
+      final arguments = call.arguments is Map ? Map.from(call.arguments as Map) : <String, dynamic>{};
+      final String placementId = arguments['placementId']?.toString() ?? _nativePlacementId;
 
-    if (call.method == 'APSSPNativeAdLoadSuccess') {
-      print('[AdPopcornSSP] 네이티브 광고 로드 성공: $placementId');
-    } else if (call.method == 'APSSPNativeAdLoadFail') {
-      final errorCode = arguments['errorCode'];
-      print('[AdPopcornSSP] 네이티브 광고 로드 실패: $placementId, errorCode=$errorCode');
+      if (call.method == 'APSSPNativeAdLoadSuccess') {
+        print('[AdPopcornSSP] 네이티브 광고 로드 성공: $placementId');
+      } else if (call.method == 'APSSPNativeAdLoadFail') {
+        final errorCode = arguments['errorCode'];
+        print('[AdPopcornSSP] 네이티브 광고 로드 실패: $placementId, errorCode=$errorCode');
+        adPopcornNativeAdLoadFailed.value = true;
+      } else if (call.method == 'APSSPNativeAdImpression') {
+        print('[AdPopcornSSP] 네이티브 광고 노출: $placementId');
+      } else if (call.method == 'APSSPNativeAdClicked') {
+        print('[AdPopcornSSP] 네이티브 광고 클릭: $placementId');
+      } else {
+        print('[AdPopcornSSP] 이벤트: ${call.method}');
+      }
+      return Future<dynamic>.value(null);
+    } catch (e, stack) {
+      // 네이티브 예외가 앱 중단으로 이어지지 않도록 처리
+      debugPrint('[AdPopcornSSP] 채널 핸들러 예외: $e\n$stack');
       adPopcornNativeAdLoadFailed.value = true;
-    } else if (call.method == 'APSSPNativeAdImpression') {
-      print('[AdPopcornSSP] 네이티브 광고 노출: $placementId');
-    } else if (call.method == 'APSSPNativeAdClicked') {
-      print('[AdPopcornSSP] 네이티브 광고 클릭: $placementId');
-    } else {
-      print('[AdPopcornSSP] 이벤트: ${call.method}');
+      return Future<dynamic>.value(null);
     }
-    return Future<dynamic>.value(null);
   }
 
   @override

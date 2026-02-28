@@ -1,5 +1,5 @@
 buildscript {
-    ext.kotlin_version = '1.7.10'
+    ext.kotlin_version = '2.0.21'
     repositories {
         google()
         mavenCentral()
@@ -15,6 +15,22 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url "https://maven.google.com" }
+
+        // AdFit (애드핏)
+        maven { url 'https://devrepo.kakao.com/nexus/content/groups/public/' }
+
+        // Pangle
+        maven { url 'https://artifact.bytedance.com/repository/pangle' }
+
+        // Cauly (3.5.34 이상)
+        maven { url 'https://cauly.github.io/cauly-sdk-android-maven/maven-repo' }
+
+        // Coupang
+        maven { url 'https://raw.githubusercontent.com/coupang-ads-sdk/android/main' }
+
+        // Mintegral
+        maven { url 'https://dl-maven-android.mintegral.com/repository/mbridge_android_sdk_oversea' }
     }
 }
 

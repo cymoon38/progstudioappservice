@@ -1,9 +1,11 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- 광고 ID 사용 (Android 13+ 및 광고 SDK 요청 시 필요, adid 미수집 시 No Ad 발생) -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
     <application
+        tools:replace="android:label"
         android:label="그림 커뮤니티"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
@@ -40,5 +42,13 @@
         <meta-data android:name="enable_ap_log" android:value="enable"/>
         <!-- 애드팝콘 SSP (상용: AppKey 123870086) -->
         <meta-data android:name="adpopcorn_ssp_app_key" android:value="123870086"/>
+        <!-- AdMob 미디에이션: 아래는 테스트 ID. 상용 배포 시 AdMob 콘솔/애드팝콘 사업팀 발급 ID로 교체 -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"/>
+        <!-- NAM (Naver Ad Manager) 퍼블리셔 코드: 실제 발급 코드로 교체 필요 -->
+        <meta-data
+            android:name="com.naver.gfpsdk.PUBLISHER_CD"
+            android:value="TEST_PUBLISHER_CD"/>
     </application>
 </manifest>

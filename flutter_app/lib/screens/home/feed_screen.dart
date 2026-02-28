@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:adpopcornreward/adpopcornreward.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -362,6 +361,17 @@ class _FeedScreenState extends State<FeedScreen> {
 }
 
 // 네이티브 광고 (애드팝콘 SSP) - 상용: AppKey 123870086, Placement ID RMArXdt3NJV48Ph
+// 플레이스먼트 허용 사이즈 1200x627 → 요청 크기를 이 비율로 맞춰 5002(No Ad) 방지
+//
+// [가이드] 광고가 나올 때도 있고 안 나올 때도 있는 이유:
+// - 광고 재고(fill)는 항상 보장되지 않음. 수요·지역·시간·타깃(adid) 등에 따라 간헐적 노출은 정상.
+// - loadAd 실패 시 재호출 금지 (과도한 요청 시 block 사유). 현재 구현은 실패 시 슬롯만 숨김.
+// - 5002(No Ad): 서버에 해당 조건의 광고 없음. 콘솔·미디에이션·광고 ID 설정 확인 권장.
+//
+// [필률 높이기] 안 나오는 경우를 줄이려면 (코드 재호출 X, 아래만 권장):
+// 1) 콘솔: 미디에이션에 광고 네트워크 추가, 플로어 가격·타깃 조정, 해당 플레이스먼트 노출 조건 확인.
+// 2) 기기: AD_ID 권한·개인맞춤 광고 허용 시 타깃팅 개선으로 필 가능성 상승 (이미 manifest에 AD_ID 반영).
+// 3) 플레이스먼트: 네이티브보다 배너가 필이 잘 나오는 경우 있음. 콘솔에서 배너 플레이스먼트 추가 후 테스트 권장.
 class _AdBannerSection extends StatefulWidget {
   @override
   State<_AdBannerSection> createState() => _AdBannerSectionState();
@@ -371,10 +381,11 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
   static const String _viewType = 'AdPopcornSSPNativeView';
   static const String _appKey = '123870086';
   static const String _placementId = 'RMArXdt3NJV48Ph';
-  /// SDK 요청용 높이 (가이드: Container height와 동일)
-  static const double _adHeight = 280.0;
-  /// 실제 표시 높이 (하단 CTA 버튼 영역 잘라서 숨김)
-  static const double _visibleHeight = 235.0;
+
+  /// 플레이스먼트 허용 비율 1200x627 기준. 최소 280으로 하단 카드가 잘리지 않게 함.
+  static double _heightForWidth(double width) {
+    return (width * 627 / 1200).clamp(280.0, 400.0);
+  }
 
   bool _loadFailed = false;
 
@@ -385,9 +396,10 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
   }
 
   void _onLoadFailedChanged() {
-    if (adPopcornNativeAdLoadFailed.value && mounted) {
-      setState(() => _loadFailed = true);
-    }
+    if (!mounted) return;
+    if (!adPopcornNativeAdLoadFailed.value) return;
+    if (_loadFailed) return; // 이미 실패 상태면 setState 스킵 (중복 방지)
+    setState(() => _loadFailed = true);
   }
 
   @override
@@ -398,18 +410,25 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
 
   @override
   Widget build(BuildContext context) {
+    // 앱 중단 원인 확인용: true면 광고 섹션 자체를 숨김 (테스트 후 반드시 false로 복구)
+    const bool _hideAdSectionForDebug = false;
+    // ignore: dead_code
+    if (_hideAdSectionForDebug) return const SizedBox.shrink();
     if (_loadFailed) return const SizedBox.shrink();
 
     final screenWidth = MediaQuery.of(context).size.width;
     final adWidth = screenWidth - 32;
+    final adHeight = _heightForWidth(adWidth);
+    /// 하단 바로구매 등 CTA 버튼 영역 잘라서 숨김
+    final visibleHeight = (adHeight - 48).clamp(220.0, 400.0);
 
-    // 가이드: creationParams - appKey, placementId, width(Android), height(Android) / Container height와 동일
+    // 플레이스먼트 허용 사이즈(1200x627) 비율로 요청해 크기 불일치 5002 방지
     final creationParams = <String, dynamic>{
       'appKey': _appKey,
       'placementId': _placementId,
       if (Platform.isAndroid) ...{
         'width': adWidth.round(),
-        'height': _adHeight.round(),
+        'height': adHeight.round(),
       },
     };
 
@@ -417,7 +436,7 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         width: double.infinity,
-        height: _visibleHeight,
+        height: visibleHeight,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
@@ -431,7 +450,8 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: SizedBox(
-            height: _adHeight,
+            key: ValueKey('native_ad_$_placementId'), // 스크롤 시 재생성 억제
+            height: adHeight,
             child: AndroidView(
               viewType: _viewType,
               creationParams: creationParams,
@@ -445,7 +465,7 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         width: double.infinity,
-        height: _visibleHeight,
+        height: visibleHeight,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
@@ -459,7 +479,8 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: SizedBox(
-            height: _adHeight,
+            key: const ValueKey('native_ad_RMArXdt3NJV48Ph'), // 스크롤 시 재생성 억제
+            height: adHeight,
             child: UiKitView(
               viewType: _viewType,
               creationParams: creationParams,
