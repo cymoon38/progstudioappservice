@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:adpopcornssp_flutter/adpopcornssp_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,11 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/data_service.dart';
 import '../theme/app_theme.dart';
+
+/// 애드팝콘 SSP 전면 비디오 광고 — 게시물 업로드 중 재생 (업로드와 동시에 전면 광고 표시).
+/// 테스트: AppKey 663451319, Placement ID VIDEO (Interstitial Video). 상용 시 123870086 및 실제 플레이스먼트 ID로 교체.
+const String _kSspAppKey = '663451319';
+const String _kUploadInterstitialVideoPlacementId = 'VIDEO';
 
 class UploadModal extends StatefulWidget {
   const UploadModal({super.key});
@@ -25,6 +31,33 @@ class _UploadModalState extends State<UploadModal> {
   File? _selectedImage;
   File? _originalImage;
   bool _isUploading = false;
+
+  /// 전면 비디오 광고 로드 완료 여부 (업로드 시 재생용)
+  bool _interstitialVideoReady = false;
+  bool _uploadCompleted = false;
+  bool _adClosed = false;
+  bool _adShown = false;
+  String? _uploadError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUploadInterstitialVideo();
+  }
+
+  /// 애드팝콘 SSP 가이드: 전면 비디오 loadInterstitialVideo → 로드 성공 시 showInterstitialVideo
+  void _loadUploadInterstitialVideo() {
+    AdPopcornSSP.loadInterstitialVideo(_kSspAppKey, _kUploadInterstitialVideoPlacementId);
+    final previousSuccess = AdPopcornSSP.interstitialVideoAdLoadSuccessListener;
+    final previousFail = AdPopcornSSP.interstitialVideoAdLoadFailListener;
+    AdPopcornSSP.interstitialVideoAdLoadSuccessListener = (placementId) {
+      if (mounted) setState(() => _interstitialVideoReady = true);
+      AdPopcornSSP.interstitialVideoAdLoadSuccessListener = previousSuccess;
+    };
+    AdPopcornSSP.interstitialVideoAdLoadFailListener = (placementId, errorCode) {
+      AdPopcornSSP.interstitialVideoAdLoadFailListener = previousFail;
+    };
+  }
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -48,19 +81,72 @@ class _UploadModalState extends State<UploadModal> {
     }
   }
 
+  /// 업로드 실행 (전면 비디오는 _uploadPost에서 재생 후 이 메서드와 병렬 진행)
+  Future<void> _performUpload() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final dataService = Provider.of<DataService>(context, listen: false);
+    if (!authService.isLoggedIn) throw Exception('로그인이 필요합니다.');
+
+    final imageResult = await dataService.uploadImageWithCompression(
+      _selectedImage!,
+      authService.user!.uid,
+      'posts',
+    );
+
+    String? originalImageUrl;
+    if (_postType == 'recreation' && _originalImage != null) {
+      final originalResult = await dataService.uploadImageWithCompression(
+        _originalImage!,
+        authService.user!.uid,
+        'posts',
+      );
+      originalImageUrl = originalResult['compressed'];
+    }
+
+    await dataService.createPost(
+      userId: authService.user!.uid,
+      username: authService.userData?['name'] ?? authService.user!.displayName ?? '익명',
+      title: _titleController.text.trim(),
+      caption: _captionController.text.trim().isEmpty ? null : _captionController.text.trim(),
+      imageUrl: imageResult['compressed']!,
+      tags: _tagsController.text.trim().isEmpty
+          ? []
+          : _tagsController.text.trim().split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).take(5).toList(),
+      type: _postType,
+      originalImageUrl: originalImageUrl,
+      compressedImageUrl: imageResult['compressed'],
+    );
+
+    if (mounted) await dataService.getAllPosts();
+  }
+
+  void _checkFinish() {
+    if (!_uploadCompleted) return;
+    if (_adShown && !_adClosed) return;
+    if (!mounted) return;
+
+    setState(() => _isUploading = false);
+    if (_uploadError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('업로드 실패: $_uploadError')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('게시물이 업로드되었습니다!')),
+      );
+      Navigator.pop(context);
+    }
+  }
+
   Future<void> _uploadPost() async {
-    // 키보드 닫기
     FocusScope.of(context).unfocus();
-    
     if (!_formKey.currentState!.validate()) return;
-    
     if (_selectedImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('본인이 그린 그림을 선택해주세요.')),
       );
       return;
     }
-
     if (_postType == 'recreation' && _originalImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('원본 그림을 선택해주세요.')),
@@ -70,74 +156,44 @@ class _UploadModalState extends State<UploadModal> {
 
     setState(() {
       _isUploading = true;
+      _uploadCompleted = false;
+      _adClosed = false;
+      _adShown = false;
+      _uploadError = null;
     });
 
-    try {
-      final authService = Provider.of<AuthService>(context, listen: false);
-      final dataService = Provider.of<DataService>(context, listen: false);
-      
-      if (!authService.isLoggedIn) {
-        throw Exception('로그인이 필요합니다.');
+    // 업로드 백그라운드 실행 (이 동안 전면 비디오 광고 재생)
+    final uploadFuture = _performUpload();
+
+    // 전면 비디오 광고 재생 — 업로드와 동시에 재생 (로드되어 있을 때만)
+    if (_interstitialVideoReady) {
+      _adShown = true;
+      final previousClosed = AdPopcornSSP.interstitialVideoAdClosedListener;
+      AdPopcornSSP.interstitialVideoAdClosedListener = (placementId) {
+        AdPopcornSSP.interstitialVideoAdClosedListener = previousClosed;
+        if (mounted) {
+          setState(() => _adClosed = true);
+          _checkFinish();
+        }
+      };
+      AdPopcornSSP.showInterstitialVideo(_kSspAppKey, _kUploadInterstitialVideoPlacementId);
+    }
+
+    // 업로드 완료 시 정리
+    uploadFuture.then((_) {
+      if (mounted) {
+        setState(() => _uploadCompleted = true);
+        _checkFinish();
       }
-
-      // 이미지 업로드 (압축된 이미지와 원본 이미지 모두 업로드)
-      final imageResult = await dataService.uploadImageWithCompression(
-        _selectedImage!,
-        authService.user!.uid,
-        'posts',
-      );
-
-      String? originalImageUrl;
-      if (_postType == 'recreation' && _originalImage != null) {
-        final originalResult = await dataService.uploadImageWithCompression(
-          _originalImage!,
-          authService.user!.uid,
-          'posts',
-        );
-        originalImageUrl = originalResult['compressed'];
-      }
-
-      // 게시물 생성
-      await dataService.createPost(
-        userId: authService.user!.uid,
-        username: authService.userData?['name'] ?? authService.user!.displayName ?? '익명',
-        title: _titleController.text.trim(),
-        caption: _captionController.text.trim().isEmpty 
-            ? null 
-            : _captionController.text.trim(),
-        imageUrl: imageResult['compressed']!,
-        tags: _tagsController.text.trim().isEmpty
-            ? []
-            : _tagsController.text.trim().split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).take(5).toList(),
-        type: _postType,
-        originalImageUrl: originalImageUrl,
-        compressedImageUrl: imageResult['compressed'],
-      );
-
-      if (!mounted) return;
-      
-      // 성공 메시지
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('게시물이 업로드되었습니다!')),
-      );
-
-      // 모달 닫기
-      Navigator.pop(context);
-
-      // 피드 새로고침
-      await dataService.getAllPosts();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('업로드 실패: ${e.toString()}')),
-      );
-    } finally {
+    }).catchError((e) {
       if (mounted) {
         setState(() {
-          _isUploading = false;
+          _uploadCompleted = true;
+          _uploadError = e.toString();
         });
+        _checkFinish();
       }
-    }
+    });
   }
 
   void _resetForm() {

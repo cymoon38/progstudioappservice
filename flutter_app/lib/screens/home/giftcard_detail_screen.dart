@@ -210,22 +210,21 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
     }
   }
 
-  // 이미지 URL 가져오기 (고화질 우선, 잘림 방지)
+  // 이미지 URL 가져오기 (고화질 우선)
   String _getImageUrl() {
     if (_detailData != null) {
-      // 상세 정보에서 고화질 이미지 우선순위: goodsImgB > goodsimg > mmsGoodsimg > goodsImgS
-      final imageUrl = (_detailData!['goodsImgB']?.toString().trim() ?? '').isNotEmpty
-          ? _detailData!['goodsImgB'].toString().trim()
-          : (_detailData!['goodsimg']?.toString().trim() ?? '').isNotEmpty
-              ? _detailData!['goodsimg'].toString().trim()
-              : (_detailData!['mmsGoodsimg']?.toString().trim() ?? '').isNotEmpty
-                  ? _detailData!['mmsGoodsimg'].toString().trim()
-                  : (_detailData!['goodsImgS']?.toString().trim() ?? '').isNotEmpty
-                      ? _detailData!['goodsImgS'].toString().trim()
-                      : '';
-      if (imageUrl.isNotEmpty) return imageUrl;
+      final trim = (Object? v) => (v?.toString().trim() ?? '');
+      final a = trim(_detailData!['goodsImgB']);
+      final b = trim(_detailData!['goodsimg']);
+      final c = trim(_detailData!['goodsImg']);
+      final d = trim(_detailData!['mmsGoodsimg']);
+      final e = trim(_detailData!['goodsImgS']);
+      if (a.isNotEmpty) return a;
+      if (b.isNotEmpty) return b;
+      if (c.isNotEmpty) return c;
+      if (d.isNotEmpty) return d;
+      if (e.isNotEmpty) return e;
     }
-    // 상세 정보에 없으면 목록에서 받은 정보 사용
     return widget.giftCard?.goodsimg ?? '';
   }
 
@@ -273,7 +272,7 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 이미지 영역 (고화질, 잘림 방지)
+                      // 이미지 영역 (고화질 2x 캐시로 선명하게 표시)
                       Container(
                         width: double.infinity,
                         height: 350,
@@ -281,7 +280,9 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
                         child: _getImageUrl().isNotEmpty
                             ? CachedNetworkImage(
                                 imageUrl: _getImageUrl(),
-                                fit: BoxFit.contain, // contain으로 이미지 전체 표시 (잘림 방지)
+                                fit: BoxFit.contain,
+                                memCacheWidth: 800,
+                                memCacheHeight: 800,
                                 placeholder: (context, url) => Container(
                                   color: Colors.grey[200],
                                   child: const Center(
@@ -396,59 +397,88 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
                             
                             // 구분선
                             Divider(color: Colors.grey[300]),
-                            
                             const SizedBox(height: 24),
-                            
-                            // content 필드만 표시
-                            if ((_detailData?['content'] ?? '').toString().isNotEmpty)
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // 유효기간 표시
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue[50],
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.blue[200]!),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.calendar_today, size: 16, color: Colors.blue[700]),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '유효기간: 30일',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.blue[700],
+
+                            // 구분선 안: 상품 설명·이용안내·유효기간
+                            Builder(
+                              builder: (context) {
+                                final content = (_detailData?['content'] ?? '').toString().trim();
+                                final description = (_detailData?['description'] ?? '').toString().trim();
+                                final usageInfo = (_detailData?['usageInfo'] ?? '').toString().trim();
+                                final expiryDate = (_detailData?['expiryDate'] ?? '').toString().trim();
+                                final hasAny = content.isNotEmpty || description.isNotEmpty || usageInfo.isNotEmpty || true;
+                                if (!hasAny) return const SizedBox.shrink();
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue[50],
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.blue[200]!),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.calendar_today, size: 16, color: Colors.blue[700]),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              expiryDate.isNotEmpty ? '유효기간: $expiryDate' : '유효기간: 30일',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.blue[700],
+                                              ),
+                                            ),
                                           ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    if (content.isNotEmpty || description.isNotEmpty) ...[
+                                      const Text(
+                                        '상품 설명',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  const Text(
-                                    '상품 설명',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    _detailData!['content'].toString(),
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      height: 1.6,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            
-                            const SizedBox(height: 32),
-                            
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        content.isNotEmpty ? content : description,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          height: 1.6,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+                                    if (usageInfo.isNotEmpty) ...[
+                                      const Text(
+                                        '이용 안내',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        usageInfo,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          height: 1.6,
+                                          color: Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 24),
+                                  ],
+                                );
+                              },
+                            ),
+
                             // 구분선
                             Divider(color: Colors.grey[300]),
                             

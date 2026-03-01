@@ -4191,7 +4191,8 @@ class DataService extends ChangeNotifier {
   Future<Map<String, dynamic>?> getGiftCardDetail(String goodsCode) async {
     try {
       debugPrint('🔍 기프티콘 상세 정보 조회 시작... goodsCode: $goodsCode');
-      final functions = FirebaseFunctions.instance;
+      // 리전 명시 (배포된 us-central1과 일치시켜 404 방지)
+      final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
       final callable = functions.httpsCallable('getGiftCardDetail');
       
       debugPrint('📞 Cloud Function 호출 중...');

@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/adpopcorn_ssp_state.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
@@ -579,6 +582,10 @@ class _MissionScreenState extends State<MissionScreen> {
               child: CustomScrollView(
                 physics: const ClampingScrollPhysics(),
                 slivers: [
+                  // 상단 네비게이션 아래 네이티브 광고 (테스트: NATIVE_TEMPLATE)
+                  const SliverToBoxAdapter(
+                    child: _MissionAdBanner(),
+                  ),
                   // 통계 카드
                   SliverToBoxAdapter(
                     child: Container(
@@ -793,6 +800,105 @@ class _MissionScreenState extends State<MissionScreen> {
         ),
       ),
     );
+  }
+}
+
+/// 미션 페이지 상단 네이티브 광고 (상용: NAM 360x50 / 테스트 NATIVE_TEMPLATE는 더 큰 크리에이티브를 줄 수 있음)
+class _MissionAdBanner extends StatefulWidget {
+  const _MissionAdBanner();
+
+  @override
+  State<_MissionAdBanner> createState() => _MissionAdBannerState();
+}
+
+class _MissionAdBannerState extends State<_MissionAdBanner> {
+  static const String _viewType = 'AdPopcornSSPNativeView';
+  static const String _appKey = '663451319';
+  static const String _placementId = 'NATIVE_TEMPLATE';
+  static const double _adWidthMax = 360;
+  static const double _adHeight = 50; // 요청 높이 (NAM 360x50)
+  /// 테스트 시 크리에이티브가 더 크게 올 수 있어 잘림 방지용 표시 높이
+  static const double _visibleHeight = 80;
+
+  bool _loadFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    adPopcornMissionNativeAdLoadFailed.addListener(_onLoadFailedChanged);
+  }
+
+  void _onLoadFailedChanged() {
+    if (!mounted) return;
+    if (!adPopcornMissionNativeAdLoadFailed.value) return;
+    if (_loadFailed) return;
+    setState(() => _loadFailed = true);
+  }
+
+  @override
+  void dispose() {
+    adPopcornMissionNativeAdLoadFailed.removeListener(_onLoadFailedChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loadFailed) return const SizedBox.shrink();
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final adWidth = (screenWidth - 32).clamp(0.0, _adWidthMax);
+    final adHeight = _adHeight;
+
+    final creationParams = <String, dynamic>{
+      'appKey': _appKey,
+      'placementId': _placementId,
+      if (Platform.isAndroid) ...{
+        'width': adWidth.round(),
+        'height': adHeight.round(),
+      },
+    };
+
+    if (Platform.isAndroid) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        width: double.infinity,
+        height: _visibleHeight,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            key: const ValueKey('native_ad_mission_NATIVE_TEMPLATE'),
+            width: adWidth,
+            height: _visibleHeight,
+            child: AndroidView(
+              viewType: _viewType,
+              creationParams: creationParams,
+              creationParamsCodec: const StandardMessageCodec(),
+            ),
+          ),
+        ),
+      );
+    }
+    if (Platform.isIOS) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        width: double.infinity,
+        height: _visibleHeight,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            key: const ValueKey('native_ad_mission_NATIVE_TEMPLATE'),
+            width: adWidth,
+            height: _visibleHeight,
+            child: UiKitView(
+              viewType: _viewType,
+              creationParams: creationParams,
+              creationParamsCodec: const StandardMessageCodec(),
+            ),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 

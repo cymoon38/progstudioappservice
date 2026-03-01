@@ -1852,36 +1852,35 @@ class _OwnedGiftCardListTabState extends State<_OwnedGiftCardListTab> {
       final dataService = Provider.of<DataService>(context, listen: false);
       final ownedCards = await dataService.getOwnedGiftCards(authService.user!.uid);
       
-      // pinStatusCd가 없거나 오래된 기프티콘만 선택적으로 백그라운드에서 API 호출 (성능 최적화)
-      // 백그라운드에서 비동기로 업데이트하여 로딩을 블로킹하지 않음
-      final List<Future<void>> updateFutures = [];
+      // pinStatusCd 갱신: trId별로 1회만 호출해 같은 카드가 02→01로 덮어쓰이지 않도록 함
+      final Set<String> trIdsToRefresh = {};
       for (final card in ownedCards) {
         final giftCardInfo = card['giftCardInfo'];
         if (giftCardInfo != null && giftCardInfo is Map) {
           final infoMap = Map<String, dynamic>.from(giftCardInfo);
           final trId = infoMap['trId'] ?? card['trId'];
           final lastRefreshed = card['lastRefreshed'] as Timestamp?;
-          
-          // trId가 있고, 마지막 업데이트가 1시간 이상 전이면 백그라운드에서 API 호출
-          // pinStatusCd가 있어도 상태가 변경될 수 있으므로 주기적으로 확인 필요
           final shouldUpdate = (trId != null && trId.toString().isNotEmpty) &&
                               (lastRefreshed == null || 
                                DateTime.now().difference(lastRefreshed.toDate()).inHours >= 1);
-          
-          if (shouldUpdate) {
-            // 백그라운드에서 비동기로 업데이트 (블로킹하지 않음)
-            updateFutures.add(
-              dataService.refreshGiftCardBarcode(trId.toString()).then((refreshedInfo) {
-                if (refreshedInfo != null && refreshedInfo['giftCardInfo'] != null) {
-                  final refreshedGiftCardInfo = refreshedInfo['giftCardInfo'] as Map<String, dynamic>;
-                  debugPrint('✅ pinStatusCd 백그라운드 업데이트: ${refreshedGiftCardInfo['pinStatusCd']}');
-                }
-              }).catchError((e) {
-                debugPrint('⚠️ 백그라운드 pinStatusCd 업데이트 실패: $e');
-              })
-            );
-          }
+          if (shouldUpdate) trIdsToRefresh.add(trId.toString());
         }
+      }
+      final List<Future<void>> updateFutures = [];
+      for (final trId in trIdsToRefresh) {
+        updateFutures.add(
+          dataService.refreshGiftCardBarcode(trId).then((refreshedInfo) {
+            if (refreshedInfo != null && refreshedInfo['giftCardInfo'] != null) {
+              final raw = refreshedInfo['giftCardInfo'];
+              final refreshedGiftCardInfo = raw is Map ? Map<String, dynamic>.from(raw) : null;
+              if (refreshedGiftCardInfo != null) {
+                debugPrint('✅ pinStatusCd 백그라운드 업데이트: ${refreshedGiftCardInfo['pinStatusCd']}');
+              }
+            }
+          }).catchError((e) {
+            debugPrint('⚠️ 백그라운드 pinStatusCd 업데이트 실패: $e');
+          }),
+        );
       }
       
       // 백그라운드 업데이트는 기다리지 않고 바로 필터링 진행 (사용자 경험 개선)
@@ -2101,6 +2100,36 @@ class _OwnedGiftCardItem extends StatefulWidget {
 }
 
 class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
+  String? _fetchedImageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadImageIfNeeded());
+  }
+
+  Future<void> _loadImageIfNeeded() async {
+    final goodsCode = widget.card['goodsCode'] as String?;
+    if (goodsCode == null || goodsCode.isEmpty) return;
+    final gci = widget.card['giftCardInfo'];
+    final fromGci = (gci is Map) ? ((gci['goodsImg'] ?? gci['goodsImgB'] ?? gci['goods_img'])?.toString().trim() ?? '') : '';
+    final fromCard = (widget.card['goodsImg']?.toString().trim() ?? '');
+    if (fromCard.isNotEmpty || fromGci.isNotEmpty) return;
+    if (!mounted) return;
+    try {
+      final dataService = Provider.of<DataService>(context, listen: false);
+      final detail = await dataService.getGiftCardDetail(goodsCode);
+      if (!mounted) return;
+      String? url;
+      if (detail != null) {
+        final u = detail['goodsImgB'] ?? detail['goodsImg'] ?? detail['goodsimg'] ?? detail['goodsImgS'] ?? detail['mmsGoodsimg'] ?? detail['goods_img'];
+        url = (u != null && u.toString().trim().isNotEmpty) ? u.toString().trim() : null;
+      }
+      if (mounted) setState(() => _fetchedImageUrl = url);
+    } catch (_) {
+      if (mounted) setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2118,7 +2147,16 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
       }
     }
     
-    final goodsImg = widget.card['goodsImg'] as String?;
+    // 썸네일 이미지 우선순위: 1) 상품 코드로 조회한 이미지(_fetchedImageUrl) 2) card/giftCardInfo
+    final rawImg = _fetchedImageUrl ??
+        widget.card['goodsImg'] ??
+        giftCardInfo?['goodsImg'] ??
+        giftCardInfo?['goodsImgB'] ??
+        giftCardInfo?['goods_img'] ??
+        '';
+    final goodsImg = (rawImg is String && rawImg.toString().trim().isNotEmpty)
+        ? rawImg.toString().trim()
+        : null;
     
     String dateText = '';
     if (purchaseDate != null) {
@@ -2135,16 +2173,16 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // 기프티콘 이미지 또는 아이콘
+              // 기프티콘 썸네일: 이미지 있으면 표시, 없으면 로딩(아이콘 없음)
               Container(
                 width: 60,
                 height: 60,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  color: goodsImg == null ? null : Colors.grey[200],
+                  color: Colors.grey[200],
                   border: Border.all(color: const Color.fromARGB(255, 225, 225, 225), width: 1),
                 ),
-                child: goodsImg != null && goodsImg.isNotEmpty
+                child: (goodsImg != null && goodsImg.isNotEmpty)
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: CachedNetworkImage(
@@ -2152,44 +2190,11 @@ class _OwnedGiftCardItemState extends State<_OwnedGiftCardItem> {
                           width: 60,
                           height: 60,
                           fit: BoxFit.cover,
-                          placeholder: (context, url) => Container(
-                            color: Colors.grey[200],
-                            child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                          errorWidget: (context, url, error) => Container(
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.card_giftcard,
-                              color: Colors.white,
-                              size: 32,
-                            ),
-                          ),
+                          placeholder: (context, url) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                          errorWidget: (context, url, error) => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                         ),
                       )
-                    : Container(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.card_giftcard,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
+                    : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
               ),
               const SizedBox(width: 16),
               // 정보
@@ -2314,12 +2319,26 @@ class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
     }
   }
 
+  Widget _buildGiftCardImagePlaceholder() {
+    return Container(
+      height: 280,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Icon(Icons.card_giftcard, color: Colors.white, size: 80),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final card = _currentCard ?? widget.card;
     final goodsName = card['goodsName'] ?? '기프티콘';
-    final goodsImg = card['goodsImg'] as String?;
     // Firestore 데이터를 안전하게 변환
     Map<String, dynamic>? giftCardInfo;
     final giftCardInfoValue = card['giftCardInfo'];
@@ -2331,6 +2350,17 @@ class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
         giftCardInfo = null;
       }
     }
+    // 바코드 위 기프티콘 이미지 우선순위: 1) 상품 코드로 조회한 이미지(_detailData) 2) card/giftCardInfo
+    final d = _detailData;
+    final detailImg = (d == null) ? '' : (
+        (d['goodsImgB'] ?? d['goodsImg'] ?? d['goodsimg'] ?? d['goodsImgS'] ?? d['mmsGoodsimg'] ?? d['goods_img'] ?? '').toString().trim()
+    );
+    final cardImg = card['goodsImg'] ?? giftCardInfo?['goodsImg'] ?? giftCardInfo?['goodsImgB'] ?? giftCardInfo?['goods_img'] ?? '';
+    final goodsImg = detailImg.isNotEmpty
+        ? detailImg
+        : (cardImg is String && cardImg.toString().trim().isNotEmpty)
+            ? cardImg.toString().trim()
+            : null;
     
     // 디버깅: giftCardInfo 전체 출력
     debugPrint('═══════════════════════════════════════');
@@ -2427,36 +2457,33 @@ class _GiftCardBarcodeScreenState extends State<_GiftCardBarcodeScreen> {
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
             
-            // 상품 이미지
-            if (goodsImg != null && goodsImg.isNotEmpty) ...[
-              Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(maxHeight: 350),
-                child: CachedNetworkImage(
-                  imageUrl: goodsImg,
-                  fit: BoxFit.contain,
-                  placeholder: (context, url) => Container(
-                    height: 350,
-                    color: Colors.grey[200],
-                    child: const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    height: 350,
-                    color: Colors.grey[200],
-                    child: const Icon(
-                      Icons.image_not_supported,
-                      color: Colors.grey,
-                      size: 64,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+            // 바코드 위 기프티콘 이미지 (추가 편집·회색 없이 원본 그대로)
+            SizedBox(
+              width: double.infinity,
+              child: (goodsImg != null && goodsImg.isNotEmpty)
+                  ? CachedNetworkImage(
+                      imageUrl: goodsImg,
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                      placeholder: (context, url) => const SizedBox(
+                        height: 200,
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => const SizedBox(
+                        height: 200,
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    )
+                  : _isLoadingDetail
+                      ? const SizedBox(
+                          height: 200,
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : const SizedBox(height: 200),
+            ),
+            const SizedBox(height: 24),
             
             // 바코드 이미지 (앱에서 자체 생성)
             if (barcode.isNotEmpty)
@@ -2684,36 +2711,35 @@ class _OwnedGiftCardListTabSliverState extends State<_OwnedGiftCardListTabSliver
       final dataService = Provider.of<DataService>(context, listen: false);
       final ownedCards = await dataService.getOwnedGiftCards(authService.user!.uid);
       
-      // pinStatusCd가 없거나 오래된 기프티콘만 선택적으로 백그라운드에서 API 호출 (성능 최적화)
-      // 백그라운드에서 비동기로 업데이트하여 로딩을 블로킹하지 않음
-      final List<Future<void>> updateFutures = [];
+      // pinStatusCd 갱신: trId별로 1회만 호출해 같은 카드가 02→01로 덮어쓰이지 않도록 함
+      final Set<String> trIdsToRefresh = {};
       for (final card in ownedCards) {
         final giftCardInfo = card['giftCardInfo'];
         if (giftCardInfo != null && giftCardInfo is Map) {
           final infoMap = Map<String, dynamic>.from(giftCardInfo);
           final trId = infoMap['trId'] ?? card['trId'];
           final lastRefreshed = card['lastRefreshed'] as Timestamp?;
-          
-          // trId가 있고, 마지막 업데이트가 1시간 이상 전이면 백그라운드에서 API 호출
-          // pinStatusCd가 있어도 상태가 변경될 수 있으므로 주기적으로 확인 필요
           final shouldUpdate = (trId != null && trId.toString().isNotEmpty) &&
                               (lastRefreshed == null || 
                                DateTime.now().difference(lastRefreshed.toDate()).inHours >= 1);
-          
-          if (shouldUpdate) {
-            // 백그라운드에서 비동기로 업데이트 (블로킹하지 않음)
-            updateFutures.add(
-              dataService.refreshGiftCardBarcode(trId.toString()).then((refreshedInfo) {
-                if (refreshedInfo != null && refreshedInfo['giftCardInfo'] != null) {
-                  final refreshedGiftCardInfo = refreshedInfo['giftCardInfo'] as Map<String, dynamic>;
-                  debugPrint('✅ pinStatusCd 백그라운드 업데이트: ${refreshedGiftCardInfo['pinStatusCd']}');
-                }
-              }).catchError((e) {
-                debugPrint('⚠️ 백그라운드 pinStatusCd 업데이트 실패: $e');
-              })
-            );
-          }
+          if (shouldUpdate) trIdsToRefresh.add(trId.toString());
         }
+      }
+      final List<Future<void>> updateFutures = [];
+      for (final trId in trIdsToRefresh) {
+        updateFutures.add(
+          dataService.refreshGiftCardBarcode(trId).then((refreshedInfo) {
+            if (refreshedInfo != null && refreshedInfo['giftCardInfo'] != null) {
+              final raw = refreshedInfo['giftCardInfo'];
+              final refreshedGiftCardInfo = raw is Map ? Map<String, dynamic>.from(raw) : null;
+              if (refreshedGiftCardInfo != null) {
+                debugPrint('✅ pinStatusCd 백그라운드 업데이트: ${refreshedGiftCardInfo['pinStatusCd']}');
+              }
+            }
+          }).catchError((e) {
+            debugPrint('⚠️ 백그라운드 pinStatusCd 업데이트 실패: $e');
+          }),
+        );
       }
       
       // 백그라운드 업데이트는 기다리지 않고 바로 필터링 진행 (사용자 경험 개선)

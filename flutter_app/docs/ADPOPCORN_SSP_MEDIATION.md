@@ -12,6 +12,12 @@
 
 애드팝콘 SSP `loadAd` 한 번으로 미디에이션에 연결된 네트워크 광고가 채워지며, 네이티브 광고 레이아웃은 `adpopcornssp_flutter` 플러그인 내부에서 처리됨.
 
+### 전면 비디오 광고 (업로드 중 재생)
+
+- **위치**: 작품 업로드 시 (`lib/widgets/upload_modal.dart`)
+- **API**: `loadInterstitialVideo` → `showInterstitialVideo` ([Flutter 가이드](https://adpopcornssp.gitbook.io/ssp-sdk/flutter))
+- **플레이스먼트**: SSP 콘솔에서 **전면 비디오** 형식으로 플레이스먼트를 생성한 뒤, `upload_modal.dart`의 `_kUploadInterstitialVideoPlacementId` 값을 해당 플레이스먼트 ID로 교체해야 함. (현재 `UPLOAD_VIDEO`는 placeholder)
+
 ---
 
 ## iOS (수동 작업 필요)

@@ -360,7 +360,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 }
 
-// 네이티브 광고 (애드팝콘 SSP) - 상용: AppKey 123870086, Placement ID RMArXdt3NJV48Ph
+// 네이티브 광고 (애드팝콘 SSP) - 테스트: AppKey 663451319, Placement ID NATIVE
 // 플레이스먼트 허용 사이즈 1200x627 → 요청 크기를 이 비율로 맞춰 5002(No Ad) 방지
 //
 // [가이드] 광고가 나올 때도 있고 안 나올 때도 있는 이유:
@@ -379,8 +379,8 @@ class _AdBannerSection extends StatefulWidget {
 
 class _AdBannerSectionState extends State<_AdBannerSection> {
   static const String _viewType = 'AdPopcornSSPNativeView';
-  static const String _appKey = '123870086';
-  static const String _placementId = 'RMArXdt3NJV48Ph';
+  static const String _appKey = '663451319';
+  static const String _placementId = 'NATIVE';
 
   /// 플레이스먼트 허용 비율 1200x627 기준. 최소 280으로 하단 카드가 잘리지 않게 함.
   static double _heightForWidth(double width) {
@@ -419,8 +419,8 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
     final screenWidth = MediaQuery.of(context).size.width;
     final adWidth = screenWidth - 32;
     final adHeight = _heightForWidth(adWidth);
-    /// 하단 바로구매 등 CTA 버튼 영역 잘라서 숨김
-    final visibleHeight = (adHeight - 48).clamp(220.0, 400.0);
+    // 홈 네이티브 광고: 자르지 않고 전체 노출
+    final visibleHeight = adHeight;
 
     // 플레이스먼트 허용 사이즈(1200x627) 비율로 요청해 크기 불일치 5002 방지
     final creationParams = <String, dynamic>{
@@ -450,7 +450,7 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: SizedBox(
-            key: ValueKey('native_ad_$_placementId'), // 스크롤 시 재생성 억제
+            key: ValueKey('native_ad_$_placementId'),
             height: adHeight,
             child: AndroidView(
               viewType: _viewType,
@@ -479,7 +479,7 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: SizedBox(
-            key: const ValueKey('native_ad_RMArXdt3NJV48Ph'), // 스크롤 시 재생성 억제
+            key: const ValueKey('native_ad_NATIVE'),
             height: adHeight,
             child: UiKitView(
               viewType: _viewType,
