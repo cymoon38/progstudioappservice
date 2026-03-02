@@ -187,9 +187,7 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
         String errorMessage = '구매 처리 중 오류가 발생했습니다.';
         final errorString = e.toString();
         
-        if (errorString.contains('코인이 부족')) {
-          errorMessage = '코인이 부족합니다.';
-        } else if (errorString.contains('로그인')) {
+        if (errorString.contains('로그인')) {
           errorMessage = '로그인이 필요합니다.';
         } else if (errorString.contains('상품 정보를 찾을 수 없습니다')) {
           errorMessage = '상품 정보를 찾을 수 없습니다. 잠시 후 다시 시도해주세요.';
@@ -199,13 +197,78 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
           errorMessage = errorString.replaceAll('Exception: ', '').replaceAll('HttpsError: ', '');
         }
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        // 코인이 부족한 경우: shop_screen.dart와 동일한 스타일의 모달 표시
+        if (errorString.contains('코인이 부족')) {
+          await showDialog<void>(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) {
+              return Dialog(
+                elevation: 0,
+                insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Text(
+                        '코인이 부족합니다',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '기프티콘을 구매하기에 코인이 부족합니다',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFF9FA4B3),
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text(
+                            '확인',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     }
   }

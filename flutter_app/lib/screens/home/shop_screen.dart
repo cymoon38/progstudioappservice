@@ -184,14 +184,16 @@ class _ShopScreenState extends State<ShopScreen> {
           _ItemCard(
             name: '목탄',
             price: 100,
-            description: '게시물을 피드 상단에 1시간 고정시킵니다. 100% 채택 기능(50코인)이 추가됩니다.',
+            description:
+                '게시물을 피드 상단에 1시간 고정시킵니다. 100% 채택 기능(50코인)이 추가됩니다.',
             onUse: () => _openSelectPostForItem(context, '목탄', 100),
           ),
           const SizedBox(height: 16),
           _ItemCard(
             name: '석탄',
             price: 500,
-            description: '게시물을 피드 상단에 3시간 고정시킵니다. 100% 채택 기능(300코인)이 추가됩니다.',
+            description:
+                '게시물을 피드 상단에 3시간 고정시킵니다. 100% 채택 기능(300코인)이 추가됩니다.',
             onUse: () => _openSelectPostForItem(context, '석탄', 500),
           ),
         ],
@@ -205,6 +207,14 @@ class _ShopScreenState extends State<ShopScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('로그인이 필요합니다.'), backgroundColor: Colors.red),
       );
+      return;
+    }
+    // 코인 부족 여부 사전 확인 (게시물 선택 화면 열기 전)
+    final coins = (authService.userData?['coins'] ?? 0) is int
+        ? (authService.userData?['coins'] ?? 0) as int
+        : int.tryParse('${authService.userData?['coins'] ?? 0}') ?? 0;
+    if (coins < itemCost) {
+      await _showCoinNotEnoughDialog(context, itemCost);
       return;
     }
     final dataService = Provider.of<DataService>(context, listen: false);
@@ -223,22 +233,22 @@ class _ShopScreenState extends State<ShopScreen> {
           itemName: itemName,
           itemCost: itemCost,
           onSelected: (postId) async {
-            final ok = await dataService.useItemOnPost(
-              userId: authService.user!.uid,
-              postId: postId,
-              itemId: itemName,
-              cost: itemCost,
-            );
-            if (!context.mounted) return;
-            if (ok) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$itemName을(를) 사용했습니다. 게시물이 피드 상단으로 올라갑니다.')),
+            bool ok = false;
+            try {
+              ok = await dataService.useItemOnPost(
+                userId: authService.user!.uid,
+                postId: postId,
+                itemId: itemName,
+                cost: itemCost,
               );
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${itemCost}코인이 부족하거나 사용에 실패했습니다.'), backgroundColor: Colors.red),
-              );
+            } catch (_) {
+              ok = false;
             }
+            if (!context.mounted) return;
+            if (!ok) {
+              await _showCoinNotEnoughDialog(context, itemCost);
+            }
+            // 성공 시에는 별도 알림을 띄우지 않고 조용히 적용
           },
         ),
       ),
@@ -268,6 +278,224 @@ class _ShopScreenState extends State<ShopScreen> {
   
   Widget _buildOwnedTabSliver() {
     return _OwnedGiftCardListTabSliver();
+  }
+
+  Future<void> _showCoinNotEnoughDialog(BuildContext context, int itemCost) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text(
+                  '코인이 부족합니다',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '아이템을 사용하기에 코인이 부족합니다',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF9FA4B3),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text(
+                      '확인',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<bool?> _showItemUseConfirmDialog(
+      BuildContext context, String itemName, int itemCost) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  '$itemName 사용',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '아이템 사용으로 $itemCost코인이 차감됩니다.',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF9FA4B3),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          side: const BorderSide(color: Color(0xFFE3E5EC)),
+                          backgroundColor: const Color(0xFFF5F6FA),
+                        ),
+                        child: const Text(
+                          '취소',
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: Color(0xFF555B6B),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text(
+                          '사용',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+  Future<void> _showItemUsedDialog(
+      BuildContext context, String itemName, int itemCost) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  '$itemName을(를) 사용했어요',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '선택한 게시물에 $itemName 아이템이 적용되었어요.\n$itemCost코인이 차감되었습니다.',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF9FA4B3),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text(
+                      '확인',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -422,6 +650,104 @@ class _ItemCard extends StatelessWidget {
   }
 }
 
+// 원형 오브 버튼 (장작/목탄/석탄)
+class _ItemOrbButton extends StatelessWidget {
+  final String label;
+  final int price;
+  final Color color;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _ItemOrbButton({
+    required this.label,
+    required this.price,
+    required this.color,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [color.withOpacity(0.9), color],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 40,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$price',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+                  ),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Center(
+                  child: Text(
+                    'C',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // 아이템 사용 시 게시물 선택 화면
 class _SelectPostForItemScreen extends StatelessWidget {
   final List<Post> posts;
@@ -464,18 +790,110 @@ class _SelectPostForItemScreen extends StatelessWidget {
                     Expanded(
                       child: InkWell(
                         onTap: () async {
+                          // 아이템 사용 확인 다이얼로그 (장작 사용 / 목탄 사용 / 석탄 사용)
                           final confirm = await showDialog<bool>(
                             context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: Text('$itemName 사용'),
-                              content: Text(
-                                '이 게시물을 피드 상단으로 올리겠습니다. $itemCost코인이 차감됩니다.',
-                              ),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
-                                TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('사용')),
-                              ],
-                            ),
+                            barrierDismissible: false,
+                            builder: (ctx) {
+                              return Dialog(
+                                elevation: 0,
+                                insetPadding:
+                                    const EdgeInsets.symmetric(horizontal: 32),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        '$itemName 사용',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        '아이템 사용으로 $itemCost코인이 차감됩니다.',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          color: Color(0xFF9FA4B3),
+                                          height: 1.4,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton(
+                                              onPressed: () =>
+                                                  Navigator.of(ctx).pop(false),
+                                              style:
+                                                  OutlinedButton.styleFrom(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        vertical: 12),
+                                                shape:
+                                                    RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                ),
+                                                side: const BorderSide(
+                                                    color:
+                                                        Color(0xFFE3E5EC)),
+                                                backgroundColor:
+                                                    const Color(0xFFF5F6FA),
+                                              ),
+                                              child: const Text(
+                                                '취소',
+                                                style: TextStyle(
+                                                  fontSize: 15,
+                                                  color: Color(0xFF555B6B),
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: ElevatedButton(
+                                              onPressed: () =>
+                                                  Navigator.of(ctx).pop(true),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor:
+                                                    AppTheme.primaryColor,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        vertical: 12),
+                                                shape:
+                                                    RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(10),
+                                                ),
+                                              ),
+                                              child: const Text(
+                                                '사용',
+                                                style: TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
                           );
                           if (confirm == true) {
                             Navigator.of(context).pop(); // 아이템 사용 게시물 선택 페이지 닫기
