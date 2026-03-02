@@ -1,6 +1,7 @@
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 const axios = require('axios');
+const crypto = require('crypto');
 
 admin.initializeApp();
 
@@ -33,6 +34,11 @@ function getSecret(secretName) {
 const GIFTSHOWBIZ_AUTH_CODE = getSecret('GIFTSHOWBIZ_AUTH_CODE');
 const GIFTSHOWBIZ_AUTH_TOKEN = getSecret('GIFTSHOWBIZ_AUTH_TOKEN');
 const GIFTSHOWBIZ_USER_ID = getSecret('GIFTSHOWBIZ_USER_ID_PROD'); // 쿠폰 발송 시 회원 식별용 (기프트쇼비즈에 등록된 ID)
+
+// 애드팝콘 리워드 서버 검증용 해시 키 (운영/스테이징)
+const ADPOPCORN_HASH_KEY = process.env.ADPOPCORN_HASH_KEY || 'f0914cb6664e4991';
+const ADPOPCORN_HASH_KEY_STAGING =
+  process.env.ADPOPCORN_HASH_KEY_STAGING || ADPOPCORN_HASH_KEY;
 
 // 일일 추첨: 매일 오후 5시, 최근 24시간 인기작품 1명(500코인)·일반작품 1명(300코인)
 function getTodayDateString() {
@@ -137,15 +143,16 @@ exports.getGiftCardList = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('unauthenticated', '인증이 필요합니다.');
     }
 
-    const apiUrl = `${GIFTSHOWBIZ_BASE_URL}/list`;
+    // 예전과 동일하게 상품 리스트 API(0101, /goods) 사용
+    const apiUrl = `${GIFTSHOWBIZ_BASE_URL}/goods`;
     const formData = new URLSearchParams();
-    formData.append('api_code', '0202'); // 상품 목록 조회
+    formData.append('api_code', '0101'); // 상품 리스트 조회
     formData.append('custom_auth_code', GIFTSHOWBIZ_AUTH_CODE);
     formData.append('custom_auth_token', GIFTSHOWBIZ_AUTH_TOKEN);
     formData.append('dev_yn', 'N'); // 운영 환경
 
     console.log('📞 Giftshowbiz API 호출:', apiUrl);
-    console.log('   api_code: 0202');
+    console.log('   api_code: 0101');
     console.log('   dev_yn: N (운영 환경)');
 
     const response = await axios.post(apiUrl, formData.toString(), {
@@ -1065,26 +1072,126 @@ exports.refreshGiftCardBarcode = functions.https.onCall(async (data, context) =>
 });
 
 // 애드팝콘 리워드 콜백 (운영/스테이징)
+// IGAWorks 리워드 서버 스펙에 맞춘 응답 포맷:
+// - 성공:   {"Result":true,"ResultCode":1,"ResultMsg":"success"}
+// - 서명 실패: {"Result":false,"ResultCode":1100,"ResultMsg":"invalid signed value"}
+// - 중복 지급: {"Result":false,"ResultCode":3100,"ResultMsg":"duplicate transaction"}
+// - 유저 없음: {"Result":false,"ResultCode":3200,"ResultMsg":"invalid user"}
 function handleAdpopcornRewardCallback(req, res, isStaging) {
-  const params = req.method === 'GET' ? req.query : (req.body || {});
-  const userId = params.user_id || params.uid || params.userId;
-  const rewardRaw = params.reward || params.amount || params.point;
-  const reward = Math.max(0, parseInt(String(rewardRaw), 10) || 0);
-  if (!userId) { res.status(400).json({ ok: false, error: 'user_id or uid required' }); return; }
-  if (reward <= 0) { res.status(400).json({ ok: false, error: 'reward required' }); return; }
-  const secretName = isStaging ? 'ADPOPCORN_CALLBACK_SECRET_STAGING' : 'ADPOPCORN_CALLBACK_SECRET';
-  const secret = process.env[secretName] || '';
-  if (secret && (params.signature || params.sig || params.sign) !== secret) {
-    res.status(403).json({ ok: false, error: 'invalid signature' }); return;
+  const params = req.method === 'GET' ? req.query : req.body || {};
+
+  const usn = String(params.usn || '').trim();
+  const rewardKey = String(params.reward_key || '').trim();
+  const quantityRaw = params.quantity;
+  const campaignKey = String(params.campaign_key || '').trim();
+  const signedValue = String(params.signed_value || '').trim();
+
+  const quantity = Math.max(0, parseInt(String(quantityRaw ?? ''), 10) || 0);
+
+  const hashKey = isStaging ? ADPOPCORN_HASH_KEY_STAGING : ADPOPCORN_HASH_KEY;
+
+  const json = (obj) => res.status(200).json(obj);
+
+  // 필수값 체크
+  if (!usn || !rewardKey || !campaignKey || !signedValue || quantity <= 0) {
+    return json({
+      Result: false,
+      ResultCode: 4000,
+      ResultMsg: 'required parameter missing',
+    });
   }
+
+  // signed_value 검증 (HMAC-MD5)
+  try {
+    const plain = `${usn}${rewardKey}${quantity}${campaignKey}`;
+    const expected = crypto
+      .createHmac('md5', hashKey)
+      .update(plain)
+      .digest('hex');
+
+    if (expected.toLowerCase() !== signedValue.toLowerCase()) {
+      console.error('AdPopcorn signed value mismatch', {
+        usn,
+        rewardKey,
+        quantity,
+        campaignKey,
+      });
+      return json({
+        Result: false,
+        ResultCode: 1100,
+        ResultMsg: 'invalid signed value',
+      });
+    }
+  } catch (e) {
+    console.error('AdPopcorn signed value check error:', e);
+    return json({
+      Result: false,
+      ResultCode: 4000,
+      ResultMsg: 'signed value check error',
+    });
+  }
+
   (async () => {
     try {
-      const userRef = db.collection('users').doc(userId);
-      if (!(await userRef.get()).exists) { res.status(404).json({ ok: false, error: 'user not found' }); return; }
-      await userRef.update({ coins: admin.firestore.FieldValue.increment(reward) });
-      await db.collection('coinHistory').add({ userId, amount: reward, type: 'offerwall', timestamp: admin.firestore.FieldValue.serverTimestamp() });
-      res.status(200).json({ ok: true, reward });
-    } catch (e) { console.error('adpopcornRewardCallback error:', e); res.status(500).json({ ok: false, error: e.message }); }
+      // reward_key 중복 지급 방지
+      const txRef = db.collection('adpopcornRewards').doc(rewardKey);
+      const txSnap = await txRef.get();
+      if (txSnap.exists) {
+        console.warn('AdPopcorn duplicate reward_key:', rewardKey);
+        return json({
+          Result: false,
+          ResultCode: 3100,
+          ResultMsg: 'duplicate transaction',
+        });
+      }
+
+      // 유저 확인
+      const userRef = db.collection('users').doc(usn);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) {
+        console.error('AdPopcorn invalid user:', usn);
+        return json({
+          Result: false,
+          ResultCode: 3200,
+          ResultMsg: 'invalid user',
+        });
+      }
+
+      // 코인 지급
+      await userRef.update({
+        coins: admin.firestore.FieldValue.increment(quantity),
+      });
+      await db.collection('coinHistory').add({
+        userId: usn,
+        amount: quantity,
+        type: 'offerwall',
+        rewardKey,
+        campaignKey,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // 트랜잭션 기록
+      await txRef.set({
+        usn,
+        rewardKey,
+        quantity,
+        campaignKey,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return json({
+        Result: true,
+        ResultCode: 1,
+        ResultMsg: 'success',
+      });
+    } catch (e) {
+      console.error('adpopcornRewardCallback error:', e);
+      return json({
+        Result: false,
+        ResultCode: 4000,
+        ResultMsg: e.message || 'server error',
+      });
+    }
   })();
 }
 exports.adpopcornRewardCallback = functions.https.onRequest((req, res) => { handleAdpopcornRewardCallback(req, res, false); });
@@ -1122,53 +1229,193 @@ exports.invalidateGiftCardCacheDaily = functions.pubsub.schedule('15 3 * * *').t
   console.log('invalidateGiftCardCacheDaily: 완료');
 });
 
-// 기프트카드 일일 동기화 (매일 04:00 KST)
-exports.syncGiftCardsDaily = functions.pubsub.schedule('0 4 * * *').timeZone('Asia/Seoul').onRun(async () => {
-  try {
-    await db.collection('syncStatus').doc('giftcards').set(
-      { status: 'syncing', updatedAt: admin.firestore.FieldValue.serverTimestamp() },
-      { merge: true }
-    );
-    const formData = new URLSearchParams();
-    formData.append('api_code', '0202');
-    formData.append('custom_auth_code', GIFTSHOWBIZ_AUTH_CODE);
-    formData.append('custom_auth_token', GIFTSHOWBIZ_AUTH_TOKEN);
-    formData.append('dev_yn', 'N');
-    const response = await axios.post(`${GIFTSHOWBIZ_BASE_URL}/list`, formData.toString(), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 60000 });
-    if (!response.data || response.data.code !== '0000') throw new Error(response.data?.message || '기프트카드 목록 API 실패');
-    const items = response.data.result || response.data.data || [];
-    const BATCH_SIZE = 500;
-    let written = 0;
-    for (let i = 0; i < items.length; i += BATCH_SIZE) {
-      const batch = db.batch();
-      const chunk = items.slice(i, i + BATCH_SIZE);
-      chunk.forEach((card) => {
-        const goodsCode = (card.goodsCode || card.goods_code || '').toString();
-        if (!goodsCode) return;
-        batch.set(db.collection('giftcards').doc(goodsCode), {
-          goodsCode,
-          goodsName: card.goodsName || card.goods_name || '',
-          goodsPrice: card.goodsPrice || card.goods_price || 0,
-          goodsImg: card.goodsImg || card.goods_img || '',
-          brandName: card.brandName || card.brand_name || '',
-          categoryName: card.categoryName || card.category_name || '',
-          description: card.description || '',
-        }, { merge: true });
+// 기프트카드 일일 동기화 (매일 03:00 KST)
+// - API 0101(/goods)로 전체 상품을 받아 Firestore `giftcards` 컬렉션을 동기화
+// - API에 있는 상품은 추가/갱신, API에 없는 기존 문서는 삭제
+exports.syncGiftCardsDaily = functions.pubsub
+  .schedule('0 3 * * *')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    try {
+      // 동기화 상태 표시
+      await db.collection('syncStatus').doc('giftcards').set(
+        {
+          status: 'syncing',
+          startedAt: admin.firestore.FieldValue.serverTimestamp(),
+          message: '상품 업데이트중...',
+        },
+        { merge: true }
+      );
+
+      // 1. API 호출 (0101 + /goods) – 페이지당 size=500으로 모든 페이지 조회
+      const apiGoodsCodes = new Set();
+
+      const BATCH_SIZE = 500;
+      let written = 0;
+
+      const pageSize = 500;
+      let page = 1;
+
+      while (true) {
+        const formData = new URLSearchParams();
+        formData.append('api_code', '0101');
+        formData.append('custom_auth_code', GIFTSHOWBIZ_AUTH_CODE);
+        formData.append('custom_auth_token', GIFTSHOWBIZ_AUTH_TOKEN);
+        formData.append('dev_yn', 'N');
+        formData.append('start', String(page)); // 시작 페이지
+        formData.append('size', String(pageSize)); // 페이지당 개수 (500)
+
+        console.log(`📞 syncGiftCardsDaily: 상품 리스트 API 호출 (/goods, api_code=0101, page=${page}, size=${pageSize})`);
+
+        const response = await axios.post(
+          `${GIFTSHOWBIZ_BASE_URL}/goods`,
+          formData.toString(),
+          {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            timeout: 60000,
+          }
+        );
+
+        if (!response.data || response.data.code !== '0000') {
+          console.error('❌ 기프트카드 목록 API 실패:', response.data);
+          throw new Error(response.data?.message || response.data?.code || '기프트카드 목록 API 실패');
+        }
+
+        const itemsPage =
+          response.data.result?.goodsList ||
+          response.data.result ||
+          response.data.data ||
+          [];
+
+        if (!Array.isArray(itemsPage) || itemsPage.length === 0) {
+          console.log(`📭 페이지 ${page}에서 더 이상 상품이 없습니다. 동기화 종료.`);
+          break;
+        }
+
+        console.log(`📦 페이지 ${page} 상품 수: ${itemsPage.length}`);
+
+        // 2. 이 페이지의 상품들을 Firestore에 upsert
+        for (let i = 0; i < itemsPage.length; i += BATCH_SIZE) {
+          const batch = db.batch();
+          const chunk = itemsPage.slice(i, i + BATCH_SIZE);
+
+          chunk.forEach((card) => {
+            const goodsCode = (card.goodsCode || card.goods_code || '').toString();
+            if (!goodsCode) return;
+
+            apiGoodsCodes.add(goodsCode);
+
+            const docRef = db.collection('giftcards').doc(goodsCode);
+
+            // 이미지/카테고리 등은 루트 functions 버전과 최대한 비슷하게 저장
+            const imageUrl =
+              card.goodsimg ||
+              card.mmsGoodsimg ||
+              card.goodsImgS ||
+              card.goodsImgB ||
+              card.goodsImg ||
+              card.image ||
+              card.img ||
+              '';
+
+            const categoryName =
+              card.categoryName1 ||
+              card.category1Name ||
+              card.categoryName ||
+              card.goodsTypeNm ||
+              '';
+
+            batch.set(
+              docRef,
+              {
+                goodsCode,
+                goodsName: String(card.goodsName || card.goods_name || ''),
+                salePrice: Number(card.salePrice) || 0,
+                discountPrice: Number(card.discountPrice) || 0,
+                goodsimg: String(imageUrl),
+                mmsGoodsimg: String(card.mmsGoodsimg || ''),
+                goodsImgS: String(card.goodsImgS || ''),
+                goodsImgB: String(card.goodsImgB || ''),
+                goodsImg: String(card.goodsImg || ''),
+                image: String(card.image || ''),
+                img: String(card.img || ''),
+                brandName: String(card.brandName || card.brand_name || ''),
+                goodsTypeNm: String(card.goodsTypeNm || ''),
+                categoryName1: String(categoryName),
+                category1Name: String(card.category1Name || ''),
+                categoryName: String(card.categoryName || ''),
+                srchKeyword: String(card.srchKeyword || ''),
+                lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            );
+          });
+
+          await batch.commit();
+          written += chunk.length;
+          console.log(`✅ syncGiftCardsDaily: upsert 배치 완료 (page=${page}), 누적: ${written}`);
+        }
+
+        // 마지막 페이지면 종료
+        if (itemsPage.length < pageSize) {
+          console.log(`📭 페이지 ${page}의 상품 수가 ${pageSize} 미만이므로 마지막 페이지로 간주하고 종료합니다.`);
+          break;
+        }
+
+        page += 1;
+      }
+
+      console.log('📊 syncGiftCardsDaily: API 상품 코드 수:', apiGoodsCodes.size);
+
+      // 3. API에는 없고 Firestore에만 있는 문서 삭제
+      console.log('🧹 syncGiftCardsDaily: API에 없는 상품 삭제 시작');
+      const allDocsSnap = await db.collection('giftcards').get();
+      const deleteBatch = db.batch();
+      let deleteCount = 0;
+      let deleteBatchCount = 0;
+
+      allDocsSnap.docs.forEach((doc) => {
+        const goodsCode = doc.id;
+        if (!apiGoodsCodes.has(goodsCode)) {
+          deleteBatch.delete(doc.ref);
+          deleteCount++;
+          deleteBatchCount++;
+        }
       });
-      await batch.commit();
-      written += chunk.length;
+
+      if (deleteBatchCount > 0) {
+        await deleteBatch.commit();
+      }
+
+      console.log('✅ syncGiftCardsDaily: 삭제된 상품 수:', deleteCount);
+
+      // 4. 상태 idle로 업데이트
+      await db.collection('syncStatus').doc('giftcards').set(
+        {
+          status: 'idle',
+          lastSync: admin.firestore.FieldValue.serverTimestamp(),
+          totalSynced: written,
+          deleted: deleteCount,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      console.log('syncGiftCardsDaily: 완료', written, '건, 삭제', deleteCount, '건');
+    } catch (e) {
+      console.error('syncGiftCardsDaily error:', e);
+      await db
+        .collection('syncStatus')
+        .doc('giftcards')
+        .set(
+          {
+            status: 'error',
+            error: String(e.message || e),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        )
+        .catch(() => {});
+      throw e;
     }
-    await db.collection('syncStatus').doc('giftcards').set(
-      { status: 'idle', lastSync: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
-      { merge: true }
-    );
-    console.log('syncGiftCardsDaily: 완료', written, '건');
-  } catch (e) {
-    console.error('syncGiftCardsDaily error:', e);
-    await db.collection('syncStatus').doc('giftcards').set(
-      { status: 'error', error: String(e.message), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
-      { merge: true }
-    ).catch(() => {});
-    throw e;
-  }
-});
+  });
