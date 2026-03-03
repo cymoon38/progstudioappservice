@@ -351,6 +351,52 @@ class CoinHistoryItem {
   }
 }
 
+/// 신고 내역 아이템 (게시물/댓글 신고 공통)
+class ReportItem {
+  final String id;
+  final String type; // 어뷰징, 선정성, 도배, 개인정보 유출 등
+  final String detail;
+  final String targetPostId;
+  final String? targetCommentId;
+  final String targetType; // 'post' | 'comment'
+  final String targetAuthor;
+  final String reporterUid;
+  final String reporterName;
+  final DateTime createdAt;
+  final bool dismissed;
+
+  ReportItem({
+    required this.id,
+    required this.type,
+    required this.detail,
+    required this.targetPostId,
+    required this.targetType,
+    required this.targetAuthor,
+    required this.reporterUid,
+    required this.reporterName,
+    required this.createdAt,
+    this.targetCommentId,
+    this.dismissed = false,
+  });
+
+  factory ReportItem.fromFirestore(DocumentSnapshot doc) {
+    final data = (doc.data() as Map<String, dynamic>?) ?? {};
+    return ReportItem(
+      id: doc.id,
+      type: (data['type'] ?? '').toString(),
+      detail: (data['detail'] ?? '').toString(),
+      targetPostId: (data['targetPostId'] ?? '').toString(),
+      targetCommentId: data['targetCommentId']?.toString(),
+      targetType: (data['targetType'] ?? '').toString(),
+      targetAuthor: (data['targetAuthor'] ?? '').toString(),
+      reporterUid: (data['reporterUid'] ?? '').toString(),
+      reporterName: (data['reporterName'] ?? '').toString(),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      dismissed: data['dismissed'] == true,
+    );
+  }
+}
+
 class DataService extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -2330,6 +2376,83 @@ class DataService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('알림 생성/업데이트 오류: $e');
+      rethrow;
+    }
+  }
+
+  // =========================
+  // Reports (신고 기능)
+  // =========================
+
+  /// 신고 생성 (게시물 또는 댓글)
+  Future<void> createReport({
+    required String reporterUid,
+    required String reporterName,
+    required String targetPostId,
+    String? targetCommentId,
+    required String targetAuthor,
+    required String targetType, // 'post' | 'comment'
+    required String reportType, // 어뷰징, 선정성, 도배, 개인정보 유출
+    required String detail,
+  }) async {
+    try {
+      await _firestore.collection('reports').add({
+        'reporterUid': reporterUid,
+        'reporterName': reporterName,
+        'targetPostId': targetPostId,
+        if (targetCommentId != null) 'targetCommentId': targetCommentId,
+        'targetAuthor': targetAuthor,
+        'targetType': targetType,
+        'type': reportType,
+        'detail': detail,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('신고 생성 오류: $e');
+      rethrow;
+    }
+  }
+
+  /// 신고 목록 (오래된순)
+  Future<List<ReportItem>> getReports({int limit = 100}) async {
+    try {
+      final snap = await _firestore
+          .collection('reports')
+          .orderBy('createdAt', descending: false)
+          .limit(limit)
+          .get();
+      return snap.docs
+          .map((d) => ReportItem.fromFirestore(d))
+          .where((r) => !r.dismissed)
+          .toList();
+    } catch (e) {
+      debugPrint('신고 목록 로드 오류: $e');
+      rethrow;
+    }
+  }
+
+  /// 단일 신고 조회
+  Future<ReportItem?> getReportById(String id) async {
+    try {
+      final doc = await _firestore.collection('reports').doc(id).get();
+      if (!doc.exists) return null;
+      final item = ReportItem.fromFirestore(doc);
+      if (item.dismissed) return null;
+      return item;
+    } catch (e) {
+      debugPrint('신고 단일 조회 오류: $e');
+      rethrow;
+    }
+  }
+
+  /// 신고 숨기기 (관리자용) - dismissed 플래그만 true로 설정
+  Future<void> dismissReport(String id) async {
+    try {
+      await _firestore.collection('reports').doc(id).update({
+        'dismissed': true,
+      });
+    } catch (e) {
+      debugPrint('신고 숨기기 오류: $e');
       rethrow;
     }
   }

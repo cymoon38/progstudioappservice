@@ -14,6 +14,24 @@ class AuthService extends ChangeNotifier {
   Map<String, dynamic>? get userData => _userData;
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _user != null;
+  bool get isBanned {
+    if (_userData == null) return false;
+    final banUntil = _userData!['banUntil'];
+    if (banUntil == null) return false;
+    if (banUntil is Timestamp) {
+      return DateTime.now().isBefore(banUntil.toDate());
+    }
+    return false;
+  }
+
+  DateTime? get banUntil {
+    if (_userData == null) return null;
+    final value = _userData!['banUntil'];
+    if (value is Timestamp) {
+      return value.toDate();
+    }
+    return null;
+  }
   
   // 운영자 여부 확인
   bool isAdmin() {

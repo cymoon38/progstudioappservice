@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,139 @@ import '../services/data_service.dart';
 import '../services/viewed_posts_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_profile_icon.dart';
+
+Future<void> _showBanConfirmDialog(
+  BuildContext context, {
+  required String targetUid,
+  required String targetName,
+  required Duration duration,
+}) async {
+  final authService = Provider.of<AuthService>(context, listen: false);
+  if (!authService.isAdmin()) {
+    return;
+  }
+
+  final days = duration.inDays;
+  final label = days == 1 ? '1일' : days == 7 ? '7일' : '${days}일';
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) {
+      return Dialog(
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Text(
+                '차단하기',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$targetName 님을 $label 동안 차단하시겠습니까?',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF111827),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                '차단 기간 동안 게시물/댓글/대댓글 작성, 좋아요,\n기프티콘 및 아이템 사용이 제한됩니다.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF6B7280),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        side: const BorderSide(color: Color(0xFFE3E5EC)),
+                        backgroundColor: const Color(0xFFF5F6FA),
+                      ),
+                      child: const Text(
+                        '취소',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: Color(0xFF555B6B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        '확인',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+
+  if (confirmed != true) return;
+
+  try {
+    final now = DateTime.now();
+    final banUntil = now.add(duration);
+    await FirebaseFirestore.instance.collection('users').doc(targetUid).update({
+      'banUntil': Timestamp.fromDate(banUntil),
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$targetName 님이 $label 동안 차단되었습니다.'),
+      ),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('차단 처리 중 오류가 발생했습니다: $e')),
+    );
+  }
+}
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -90,12 +224,100 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return isPostOwner ? post.likes.length : 0;
   }
 
+  void _showBanDialog(BuildContext context, DateTime? banUntil) {
+    final String message;
+    if (banUntil != null) {
+      final formatted = DateFormat('yyyy.MM.dd HH:mm').format(banUntil);
+      message = '$formatted 이후부터 정상적인 활동이 가능합니다';
+    } else {
+      message = '차단 해제 시까지 정상적인 활동이 가능합니다';
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text(
+                  '차단되었습니다',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF9FA4B3),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '자세한 내용은 progstudio38@gmail.com으로 문의해주세요',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF9FA4B3),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text(
+                      '확인',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _toggleLike() async {
     final authService = Provider.of<AuthService>(context, listen: false);
     if (!authService.isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('로그인이 필요합니다.')),
       );
+      return;
+    }
+
+    if (authService.isBanned) {
+      _showBanDialog(context, authService.banUntil);
       return;
     }
 
@@ -186,6 +408,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
+    if (authService.isBanned) {
+      _showBanDialog(context, authService.banUntil);
+      return;
+    }
+
     try {
       final dataService = Provider.of<DataService>(context, listen: false);
       await dataService.addComment(
@@ -255,6 +482,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
+    if (authService.isBanned) {
+      _showBanDialog(context, authService.banUntil);
+      return;
+    }
+
     try {
       final dataService = Provider.of<DataService>(context, listen: false);
       await dataService.addReply(
@@ -285,6 +517,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
+    if (authService.isBanned) {
+      _showBanDialog(context, authService.banUntil);
+      return;
+    }
+
     try {
       final dataService = Provider.of<DataService>(context, listen: false);
       await dataService.deleteComment(widget.postId, commentIndex);
@@ -303,6 +540,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
+    if (authService.isBanned) {
+      _showBanDialog(context, authService.banUntil);
+      return;
+    }
+
     try {
       final dataService = Provider.of<DataService>(context, listen: false);
       await dataService.deleteReply(widget.postId, commentIndex, replyPath);
@@ -311,6 +553,255 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       // 답글 삭제 실패 시에도 별도 알림은 표시하지 않음
     }
   }
+
+  /// 댓글/게시물 신고 다이얼로그
+  Future<void> _showReportDialog({
+    required BuildContext context,
+    required String targetPostId,
+    String? targetCommentId,
+    required String targetAuthor,
+    required String targetType, // 'post' | 'comment'
+  }) async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그인이 필요합니다.')),
+      );
+      return;
+    }
+
+    if (authService.isBanned) {
+      _showBanDialog(context, authService.banUntil);
+      return;
+    }
+
+    String? selectedType = '어뷰징';
+    final detailController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '신고하기',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (final type in ['어뷰징', '선정성', '도배', '개인정보 유출'])
+                            Padding(
+                              padding: EdgeInsets.only(
+                                  right: type == '개인정보 유출' ? 0 : 8),
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    selectedType = type;
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 8, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: selectedType == type
+                                        ? AppTheme.primaryColor.withOpacity(0.08)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: selectedType == type
+                                          ? AppTheme.primaryColor
+                                          : const Color(0xFFE3E5EC),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    type,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: selectedType == type
+                                          ? AppTheme.primaryColor
+                                          : const Color(0xFF555B6B),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: detailController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText: '상세한 내용을 입력해주세요.',
+                        hintStyle: TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFF9CA3AF),
+                          fontWeight: FontWeight.w300,
+                        ),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              side: const BorderSide(color: Color(0xFFE3E5EC)),
+                              backgroundColor: const Color(0xFFF5F6FA),
+                            ),
+                            child: const Text(
+                              '취소',
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: Color(0xFF555B6B),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              if (selectedType == null ||
+                                  detailController.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('신고 유형과 내용을 입력해주세요.')),
+                                );
+                                return;
+                              }
+                              Navigator.of(ctx).pop(true);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryColor,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text(
+                              '신고',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result == true && selectedType != null) {
+      final dataService = Provider.of<DataService>(context, listen: false);
+      await dataService.createReport(
+        reporterUid: authService.user!.uid,
+        reporterName:
+            authService.userData?['name'] as String? ?? '익명',
+        targetPostId: targetPostId,
+        targetCommentId: targetCommentId,
+        targetAuthor: targetAuthor,
+        targetType: targetType,
+        reportType: selectedType!,
+        detail: detailController.text.trim(),
+      );
+      if (mounted) {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          return Dialog(
+            elevation: 0,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    '신고가 접수되었습니다',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        '확인',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+      }
+    }
+  }
+
+  // _showSimpleAlertDialog는 더 이상 사용하지 않음 (신고 완료 전용 모달로 대체)
 
   // 댓글 채택 즉시 UI 업데이트
   void _updateCommentAccepted(int commentIndex, int coinAmount) {
@@ -555,9 +1046,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 즉시 UI 업데이트 (낙관적 업데이트)
     if (mounted) {
       Navigator.pop(context); // 게시물 상세 화면 즉시 닫기
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('게시물이 삭제되었습니다.')),
-      );
     }
 
     // 백그라운드에서 실제 삭제 작업 수행 (블로킹하지 않음)
@@ -616,9 +1104,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         iconTheme: const IconThemeData(color: AppTheme.textPrimary),
         actions: [
           // 게시물 삭제 버튼
-          // - 일반 게시물: 작성자만
-          // - 공지사항: 운영자만
-          if ((isPostOwner && post.type != 'notice') || (isAdmin && post.type == 'notice'))
+          // - 일반 게시물: 작성자 또는 관리자
+          // - 공지사항: 관리자만
+          if (isPostOwner || isAdmin)
             IconButton(
               icon: const Icon(Icons.delete_outline),
               onPressed: _deletePost,
@@ -708,16 +1196,66 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(12),
                                           ),
-                                          itemBuilder: (context) => const [
-                                            PopupMenuItem(
-                                              value: 'report_post',
-                                              child: Text('신고하기'),
-                                            ),
-                                          ],
+                                          itemBuilder: (context) {
+                                            final items = <PopupMenuEntry<String>>[
+                                              const PopupMenuItem(
+                                                value: 'report_post',
+                                                child: Text('신고하기'),
+                                              ),
+                                            ];
+                                            if (isAdmin && (post.authorUid != null && post.authorUid!.isNotEmpty)) {
+                                              items.addAll(const [
+                                                PopupMenuItem(
+                                                  value: 'ban_1d_post',
+                                                  child: Text('1일 차단'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'ban_7d_post',
+                                                  child: Text('7일 차단'),
+                                                ),
+                                                PopupMenuItem(
+                                                  value: 'ban_30d_post',
+                                                  child: Text('30일 차단'),
+                                                ),
+                                              ]);
+                                            }
+                                            return items;
+                                          },
                                           onSelected: (value) {
                                             if (value == 'report_post') {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('게시물 신고 기능은 준비 중입니다.')),
+                                              _showReportDialog(
+                                                context: context,
+                                                targetPostId: widget.postId,
+                                                targetCommentId: null,
+                                                targetAuthor: post.author,
+                                                targetType: 'post',
+                                              );
+                                            } else if (value == 'ban_1d_post' &&
+                                                post.authorUid != null &&
+                                                post.authorUid!.isNotEmpty) {
+                                              _showBanConfirmDialog(
+                                                context,
+                                                targetUid: post.authorUid!,
+                                                targetName: post.author,
+                                                duration: const Duration(days: 1),
+                                              );
+                                            } else if (value == 'ban_7d_post' &&
+                                                post.authorUid != null &&
+                                                post.authorUid!.isNotEmpty) {
+                                              _showBanConfirmDialog(
+                                                context,
+                                                targetUid: post.authorUid!,
+                                                targetName: post.author,
+                                                duration: const Duration(days: 7),
+                                              );
+                                            } else if (value == 'ban_30d_post' &&
+                                                post.authorUid != null &&
+                                                post.authorUid!.isNotEmpty) {
+                                              _showBanConfirmDialog(
+                                                context,
+                                                targetUid: post.authorUid!,
+                                                targetName: post.author,
+                                                duration: const Duration(days: 30),
                                               );
                                             }
                                           },
@@ -1057,6 +1595,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
     );
   }
+
 }
 
 // 좋아요 버튼
@@ -1300,6 +1839,7 @@ class _CommentItem extends StatelessWidget {
     final isPostAuthor = authService.isLoggedIn &&
         postAuthor == (authService.userData?['name'] as String? ?? '');
     final isAccepted = comment.isAccepted;
+    final isAdmin = authService.isAdmin();
     // 본인 댓글은 채택 불가
     final canAccept = isPostAuthor && !isAccepted && !isOwner;
 
@@ -1347,24 +1887,67 @@ class _CommentItem extends StatelessWidget {
                           icon: const Icon(Icons.more_vert, color: Color(0xFFB0B0B0), size: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           itemBuilder: (context) {
-                            final items = <PopupMenuItem<String>>[];
+                            final items = <PopupMenuEntry<String>>[];
                             if (canAccept && acceptedCount < 3) {
                               items.add(const PopupMenuItem(value: 'accept', child: Text('채택하기')));
                             }
                             items.add(const PopupMenuItem(value: 'report', child: Text('신고하기')));
-                            if (isOwner) {
+                            if (isOwner || isAdmin) {
                               items.add(const PopupMenuItem(value: 'delete', child: Text('삭제하기')));
+                            }
+                            if (isAdmin && comment.authorUid != null && comment.authorUid!.isNotEmpty) {
+                              items.addAll(const [
+                                PopupMenuItem(
+                                  value: 'ban_1d_comment',
+                                  child: Text('1일 차단'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'ban_7d_comment',
+                                  child: Text('7일 차단'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'ban_30d_comment',
+                                  child: Text('30일 차단'),
+                                ),
+                              ]);
                             }
                             return items;
                           },
                           onSelected: (value) {
-                            if (value == 'accept') _showAcceptCommentDialog(context);
-                            if (value == 'report') {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('신고 기능은 준비 중입니다.')),
+                            if (value == 'accept') {
+                              _showAcceptCommentDialog(context);
+                            } else if (value == 'report') {
+                              _showReportDialogForComment(context);
+                            } else if (value == 'delete') {
+                              onDeleteComment();
+                            } else if (value == 'ban_1d_comment' &&
+                                comment.authorUid != null &&
+                                comment.authorUid!.isNotEmpty) {
+                              _showBanConfirmDialog(
+                                context,
+                                targetUid: comment.authorUid!,
+                                targetName: comment.author,
+                                duration: const Duration(days: 1),
+                              );
+                            } else if (value == 'ban_7d_comment' &&
+                                comment.authorUid != null &&
+                                comment.authorUid!.isNotEmpty) {
+                              _showBanConfirmDialog(
+                                context,
+                                targetUid: comment.authorUid!,
+                                targetName: comment.author,
+                                duration: const Duration(days: 7),
+                              );
+                            } else if (value == 'ban_30d_comment' &&
+                                comment.authorUid != null &&
+                                comment.authorUid!.isNotEmpty) {
+                              _showBanConfirmDialog(
+                                context,
+                                targetUid: comment.authorUid!,
+                                targetName: comment.author,
+                                duration: const Duration(days: 30),
                               );
                             }
-                            if (value == 'delete') onDeleteComment();
                           },
                         ),
                       ),
@@ -1575,6 +2158,239 @@ class _CommentItem extends StatelessWidget {
     );
   }
 
+  Future<void> _showReportDialogForComment(BuildContext context) async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그인이 필요합니다.')),
+      );
+      return;
+    }
+
+    String? selectedType = '어뷰징';
+    final detailController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '신고하기',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (final type in ['어뷰징', '선정성', '도배', '개인정보 유출'])
+                            Padding(
+                              padding: EdgeInsets.only(
+                                  right: type == '개인정보 유출' ? 0 : 8),
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    selectedType = type;
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 8, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: selectedType == type
+                                        ? AppTheme.primaryColor.withOpacity(0.08)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: selectedType == type
+                                          ? AppTheme.primaryColor
+                                          : const Color(0xFFE3E5EC),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    type,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: selectedType == type
+                                          ? AppTheme.primaryColor
+                                          : const Color(0xFF555B6B),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: detailController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText: '상세한 내용을 입력해주세요.',
+                        hintStyle: TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFF9CA3AF),
+                          fontWeight: FontWeight.w300,
+                        ),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              side: const BorderSide(color: Color(0xFFE3E5EC)),
+                              backgroundColor: const Color(0xFFF5F6FA),
+                            ),
+                            child: const Text(
+                              '취소',
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: Color(0xFF555B6B),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              if (selectedType == null ||
+                                  detailController.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('신고 유형과 내용을 입력해주세요.')),
+                                );
+                                return;
+                              }
+                              Navigator.of(ctx).pop(true);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryColor,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text(
+                              '신고',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result == true && selectedType != null) {
+      final dataService = Provider.of<DataService>(context, listen: false);
+      await dataService.createReport(
+        reporterUid: authService.user!.uid,
+        reporterName:
+            authService.userData?['name'] as String? ?? '익명',
+        targetPostId: postId,
+        targetCommentId: comment.id,
+        targetAuthor: comment.author,
+        targetType: 'comment',
+        reportType: selectedType!,
+        detail: detailController.text.trim(),
+      );
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          return Dialog(
+            elevation: 0,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    '신고가 접수되었습니다',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        '확인',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+  }
+
   void _showAcceptCommentDialog(BuildContext context) {
     int? selectedCoinAmount;
 
@@ -1599,53 +2415,26 @@ class _CommentItem extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 그라데이션 헤더
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: AppTheme.primaryGradient,
-                      borderRadius: BorderRadius.circular(20),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '댓글 채택',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textPrimary,
+                      ),
                     ),
-                    padding: const EdgeInsets.all(24),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.check_circle,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '댓글 채택',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                '지급할 코인 양을 입력하세요',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '지급할 코인 양을 선택하세요',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.textSecondary,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -1745,7 +2534,7 @@ class _CommentItem extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        flex: 2,
+                        flex: 1,
                         child: ElevatedButton(
                           onPressed: selectedCoinAmount == null
                               ? null
@@ -1888,6 +2677,7 @@ class _ReplyItem extends StatelessWidget {
     final isPostAuthor = authService.isLoggedIn &&
         postAuthor == (authService.userData?['name'] as String? ?? '');
     final isAccepted = reply.isAccepted;
+    final isAdmin = authService.isAdmin();
     // 본인 대댓글은 채택 불가
     final canAccept = isPostAuthor && !isAccepted && !isOwner;
 
@@ -1916,32 +2706,84 @@ class _ReplyItem extends StatelessWidget {
                           fontSize: 16,
                         ),
                       ),
-                      PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, color: const Color(0xFFB0B0B0), size: 16),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-                        iconSize: 16,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        itemBuilder: (context) {
-                          final items = <PopupMenuItem<String>>[];
-                          if (canAccept && acceptedCount < 3) {
-                            items.add(const PopupMenuItem(value: 'accept', child: Text('채택하기')));
-                          }
-                          items.add(const PopupMenuItem(value: 'report', child: Text('신고하기')));
-                          if (isOwner) {
-                            items.add(const PopupMenuItem(value: 'delete', child: Text('삭제하기')));
-                          }
-                          return items;
-                        },
-                        onSelected: (value) {
-                          if (value == 'accept') _showAcceptReplyDialog(context);
-                          if (value == 'report') {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('신고 기능은 준비 중입니다.')),
-                            );
-                          }
-                          if (value == 'delete') onDeleteReply(replyPath);
-                        },
+                      const SizedBox(width: 4),
+                      Theme(
+                        data: Theme.of(context).copyWith(
+                          useMaterial3: false,
+                          popupMenuTheme: const PopupMenuThemeData(
+                            color: Colors.white,
+                          ),
+                        ),
+                        child: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, color: Color(0xFFB0B0B0), size: 16),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 140, minHeight: 0),
+                          iconSize: 16,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          itemBuilder: (context) {
+                            final items = <PopupMenuEntry<String>>[];
+                            if (canAccept && acceptedCount < 3) {
+                              items.add(const PopupMenuItem(value: 'accept', child: Text('채택하기')));
+                            }
+                            items.add(const PopupMenuItem(value: 'report', child: Text('신고하기')));
+                            if (isOwner || isAdmin) {
+                              items.add(const PopupMenuItem(value: 'delete', child: Text('삭제하기')));
+                            }
+                            if (isAdmin && reply.authorUid != null && reply.authorUid!.isNotEmpty) {
+                              items.addAll(const [
+                                PopupMenuItem(
+                                  value: 'ban_1d_reply',
+                                  child: Text('1일 차단'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'ban_7d_reply',
+                                  child: Text('7일 차단'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'ban_30d_reply',
+                                  child: Text('30일 차단'),
+                                ),
+                              ]);
+                            }
+                            return items;
+                          },
+                          onSelected: (value) {
+                            if (value == 'accept') {
+                              _showAcceptReplyDialog(context);
+                            } else if (value == 'report') {
+                              _showReportDialogForReply(context);
+                            } else if (value == 'delete') {
+                              onDeleteReply(replyPath);
+                            } else if (value == 'ban_1d_reply' &&
+                                reply.authorUid != null &&
+                                reply.authorUid!.isNotEmpty) {
+                              _showBanConfirmDialog(
+                                context,
+                                targetUid: reply.authorUid!,
+                                targetName: reply.author,
+                                duration: const Duration(days: 1),
+                              );
+                            } else if (value == 'ban_7d_reply' &&
+                                reply.authorUid != null &&
+                                reply.authorUid!.isNotEmpty) {
+                              _showBanConfirmDialog(
+                                context,
+                                targetUid: reply.authorUid!,
+                                targetName: reply.author,
+                                duration: const Duration(days: 7),
+                              );
+                            } else if (value == 'ban_30d_reply' &&
+                                reply.authorUid != null &&
+                                reply.authorUid!.isNotEmpty) {
+                              _showBanConfirmDialog(
+                                context,
+                                targetUid: reply.authorUid!,
+                                targetName: reply.author,
+                                duration: const Duration(days: 30),
+                              );
+                            }
+                          },
+                        ),
                       ),
                       if (isAccepted) ...[
                         const SizedBox(width: 8),
@@ -2141,6 +2983,239 @@ class _ReplyItem extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showReportDialogForReply(BuildContext context) async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그인이 필요합니다.')),
+      );
+      return;
+    }
+
+    String? selectedType = '어뷰징';
+    final detailController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '신고하기',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (final type in ['어뷰징', '선정성', '도배', '개인정보 유출'])
+                            Padding(
+                              padding: EdgeInsets.only(
+                                  right: type == '개인정보 유출' ? 0 : 8),
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    selectedType = type;
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 8, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: selectedType == type
+                                        ? AppTheme.primaryColor.withOpacity(0.08)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: selectedType == type
+                                          ? AppTheme.primaryColor
+                                          : const Color(0xFFE3E5EC),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    type,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: selectedType == type
+                                          ? AppTheme.primaryColor
+                                          : const Color(0xFF555B6B),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: detailController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText: '상세한 내용을 입력해주세요.',
+                        hintStyle: TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFF9CA3AF),
+                          fontWeight: FontWeight.w300,
+                        ),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              side: const BorderSide(color: Color(0xFFE3E5EC)),
+                              backgroundColor: const Color(0xFFF5F6FA),
+                            ),
+                            child: const Text(
+                              '취소',
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: Color(0xFF555B6B),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              if (selectedType == null ||
+                                  detailController.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text('신고 유형과 내용을 입력해주세요.')),
+                                );
+                                return;
+                              }
+                              Navigator.of(ctx).pop(true);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryColor,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text(
+                              '신고',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result == true && selectedType != null) {
+      final dataService = Provider.of<DataService>(context, listen: false);
+      await dataService.createReport(
+        reporterUid: authService.user!.uid,
+        reporterName:
+            authService.userData?['name'] as String? ?? '익명',
+        targetPostId: postId,
+        targetCommentId: reply.id,
+        targetAuthor: reply.author,
+        targetType: 'comment',
+        reportType: selectedType!,
+        detail: detailController.text.trim(),
+      );
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          return Dialog(
+            elevation: 0,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    '신고가 접수되었습니다',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        '확인',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
   }
 
   void _showAcceptReplyDialog(BuildContext context) {

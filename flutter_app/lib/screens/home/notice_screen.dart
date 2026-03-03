@@ -12,6 +12,7 @@ import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/notice_create_modal.dart';
 import '../post_detail_screen.dart';
+import '../admin/report_list_screen.dart';
 
 class NoticeScreen extends StatefulWidget {
   const NoticeScreen({super.key});
@@ -221,31 +222,52 @@ class _NoticeScreenState extends State<NoticeScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   ElevatedButton.icon(
-                                onPressed: () {
-                                  showDialog(
-                                    context: context,
-                                    barrierDismissible: true,
-                                    builder: (context) => const NoticeCreateModal(),
-                                  );
-                                },
+                                    onPressed: () {
+                                      showDialog(
+                                        context: context,
+                                        barrierDismissible: true,
+                                        builder: (context) => const NoticeCreateModal(),
+                                      );
+                                    },
                                     icon: const Icon(Icons.add, size: 12),
-                                label: const Text('공지 작성'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.primaryColor,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
+                                    label: const Text('공지'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.primaryColor,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(width: 8),
                                   ElevatedButton.icon(
                                     onPressed: () => _downloadCoinHistory(context),
                                     icon: const Icon(Icons.download, size: 12),
-                                    label: const Text('코인 내역'),
+                                    label: const Text('코인'),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const ReportListScreen(),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.flag, size: 12),
+                                    label: const Text('신고'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF4B6BFB),
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                       shape: RoundedRectangleBorder(

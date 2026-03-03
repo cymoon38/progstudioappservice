@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
 
@@ -86,6 +87,24 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
       return;
     }
     
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그인이 필요합니다.')),
+      );
+      return;
+    }
+    if (authService.isBanned) {
+      final until = authService.banUntil;
+      final message = until != null
+          ? '${until.year}.${until.month.toString().padLeft(2, '0')}.${until.day.toString().padLeft(2, '0')} ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')} 이후부터 정상적인 활동이 가능합니다'
+          : '차단 해제 시까지 정상적인 활동이 가능합니다';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+      return;
+    }
+
     setState(() {
       _isPurchasing = true;
       _errorMessage = null;
