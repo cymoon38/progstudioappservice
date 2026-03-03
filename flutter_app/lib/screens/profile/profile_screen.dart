@@ -261,7 +261,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final postCount = _allUserPosts.length;
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(_isSelectionMode ? '${_selectedPostIds.length}개 선택됨' : '마이페이지'),
         backgroundColor: Colors.white,
@@ -448,40 +448,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       });
                                     }
                                   },
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: (post.compressedImageUrl?.isNotEmpty == true || post.imageUrl.isNotEmpty)
-                                        ? CachedNetworkImage(
-                                            imageUrl: post.compressedImageUrl ?? post.imageUrl,
-                                            width: double.infinity,
-                                            height: double.infinity,
-                                            fit: BoxFit.cover,
-                                            placeholder: (context, url) => Container(
-                                              color: Colors.grey[200],
-                                              child: const Center(
-                                                child: CircularProgressIndicator(),
-                                              ),
-                                            ),
-                                            errorWidget: (context, url, error) {
-                                              // 이미지 로드 실패 시 해당 게시물을 목록에서 제거 (삭제된 게시물)
-                                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                                if (mounted) {
-                                                  setState(() {
-                                                    _allUserPosts.removeWhere((p) => p.id == post.id);
-                                                    _selectedPostIds.remove(post.id);
-                                                  });
-                                                }
-                                              });
-                                              return Container(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      color: Colors.grey[200],
+                                      border: Border.all(
+                                        color: const Color(0xFFE1E1E1),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: (post.compressedImageUrl?.isNotEmpty == true || post.imageUrl.isNotEmpty)
+                                          ? CachedNetworkImage(
+                                              imageUrl: post.compressedImageUrl ?? post.imageUrl,
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                              fit: BoxFit.cover,
+                                              placeholder: (context, url) => Container(
                                                 color: Colors.grey[200],
-                                                child: const Icon(Icons.broken_image, color: Colors.grey),
-                                              );
-                                            },
-                                          )
-                                        : Container(
-                                            color: Colors.grey[200],
-                                            child: const Icon(Icons.image_not_supported, color: Colors.grey),
-                                          ),
+                                                child: const Center(
+                                                  child: CircularProgressIndicator(),
+                                                ),
+                                              ),
+                                              errorWidget: (context, url, error) {
+                                                // 이미지 로드 실패 시 해당 게시물을 목록에서 제거 (삭제된 게시물)
+                                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                  if (mounted) {
+                                                    setState(() {
+                                                      _allUserPosts.removeWhere((p) => p.id == post.id);
+                                                      _selectedPostIds.remove(post.id);
+                                                    });
+                                                  }
+                                                });
+                                                return Container(
+                                                  color: Colors.grey[200],
+                                                  child: const Icon(Icons.broken_image, color: Colors.grey),
+                                                );
+                                              },
+                                            )
+                                          : Container(
+                                              color: Colors.grey[200],
+                                              child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                                            ),
+                                    ),
                                   ),
                                 ),
                                 // 선택 모드일 때 선택 표시
@@ -578,10 +588,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
-                  // 하단 여백
+                  // 로그아웃 버튼 (하단)
                   SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: MediaQuery.of(context).padding.bottom + 80,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final authService = Provider.of<AuthService>(context, listen: false);
+                            await authService.signOut();
+                            if (context.mounted) {
+                              Navigator.of(context).popUntil((route) => route.isFirst);
+                            }
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            side: const BorderSide(color: Color(0xFFE3E5EC)),
+                            backgroundColor: Colors.white,
+                          ),
+                          child: const Text(
+                            '로그아웃',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Color(0xFF555B6B),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -606,63 +644,63 @@ class _SortDropdown extends StatefulWidget {
 }
 
 class _SortDropdownState extends State<_SortDropdown> {
-  bool _isHovered = false;
-  bool _isFocused = false;
-
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      onFocusChange: (hasFocus) {
-        setState(() {
-          _isFocused = hasFocus;
-        });
-      },
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _isHovered = true),
-        onExit: (_) => setState(() => _isHovered = false),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(
-              color: _isHovered || _isFocused
-                  ? AppTheme.primaryColor // #667eea
-                  : const Color(0xFFE0E0E0), // #e0e0e0
-              width: 2,
+    // label은 DropdownButton이 직접 렌더링하므로 별도 계산 불필요
+
+    const double width = 120.0;
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        canvasColor: Colors.white, // 드롭다운 메뉴 배경 흰색
+      ),
+      child: SizedBox(
+        width: width,
+        child: DropdownButtonHideUnderline(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(
+                color: const Color(0xFFE0E0E0),
+                width: 2,
+              ),
+              borderRadius: BorderRadius.circular(20),
             ),
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: _isFocused
-                ? [
-                    BoxShadow(
-                      color: AppTheme.primaryColor.withOpacity(0.1),
-                      blurRadius: 0,
-                      spreadRadius: 3,
-                    ),
-                  ]
-                : null,
-          ),
-          child: DropdownButton<String>(
-            value: widget.value,
-            items: const [
-              DropdownMenuItem(value: 'newest', child: Text('최신순')),
-              DropdownMenuItem(value: 'oldest', child: Text('오래된순')),
-              DropdownMenuItem(value: 'popular', child: Text('인기순')),
-            ],
-            onChanged: widget.onChanged,
-            style: const TextStyle(
-              fontSize: 15.2, // 0.95rem ≈ 15.2px
-              color: Color(0xFF333333), // #333
-            ),
-            underline: Container(), // 기본 밑줄 제거
-            icon: const Icon(
-              Icons.arrow_drop_down,
-              color: Color(0xFF333333),
-            ),
-            isExpanded: false,
-            dropdownColor: Colors.white,
-          ),
+            child: DropdownButton<String>(
+              value: widget.value,
+              isExpanded: true,
+              dropdownColor: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              items: const [
+                DropdownMenuItem(
+                  value: 'newest',
+                  child: Text('최신순'),
+                ),
+                DropdownMenuItem(
+                  value: 'oldest',
+                  child: Text('오래된순'),
+                ),
+                DropdownMenuItem(
+                  value: 'popular',
+                  child: Text('인기순'),
+                ),
+              ],
+              onChanged: widget.onChanged,
+              icon: const Icon(
+                Icons.arrow_drop_down,
+                color: Color(0xFF333333),
+                size: 20,
+              ),
+              style: const TextStyle(
+                fontSize: 15.2,
+                color: Color(0xFF333333),
+                fontWeight: FontWeight.w500,
               ),
             ),
+          ),
+        ),
+      ),
     );
   }
 }

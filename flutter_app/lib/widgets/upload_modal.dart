@@ -131,9 +131,7 @@ class _UploadModalState extends State<UploadModal> {
         SnackBar(content: Text('업로드 실패: $_uploadError')),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('게시물이 업로드되었습니다!')),
-      );
+      // 업로드 성공 시 별도 알림 없이 업로드 모달만 닫음
       Navigator.pop(context);
     }
   }

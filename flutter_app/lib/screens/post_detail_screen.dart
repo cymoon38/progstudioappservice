@@ -290,9 +290,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await dataService.deleteComment(widget.postId, commentIndex);
       await _loadPost();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('댓글 삭제 실패: $e')),
-      );
+      // 댓글 삭제 실패 시에도 별도 알림은 표시하지 않음
     }
   }
 
@@ -310,9 +308,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await dataService.deleteReply(widget.postId, commentIndex, replyPath);
       await _loadPost();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('답글 삭제 실패: $e')),
-      );
+      // 답글 삭제 실패 시에도 별도 알림은 표시하지 않음
     }
   }
 
@@ -681,13 +677,53 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             Flexible(
                               child: SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
-                                child: Text(
-                                  post.author,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textPrimary,
-                                    fontSize: 16,
-                                  ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      post.author,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: AppTheme.textPrimary,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    if (!isPostOwner)
+                                      Theme(
+                                        data: Theme.of(context).copyWith(
+                                          useMaterial3: false,
+                                          popupMenuTheme: const PopupMenuThemeData(
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        child: PopupMenuButton<String>(
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(minWidth: 140, minHeight: 0),
+                                          iconSize: 18,
+                                          icon: const Icon(
+                                            Icons.more_vert,
+                                            color: Color(0xFFB0B0B0),
+                                            size: 18,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          itemBuilder: (context) => const [
+                                            PopupMenuItem(
+                                              value: 'report_post',
+                                              child: Text('신고하기'),
+                                            ),
+                                          ],
+                                          onSelected: (value) {
+                                            if (value == 'report_post') {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('게시물 신고 기능은 준비 중입니다.')),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -1296,32 +1332,41 @@ class _CommentItem extends StatelessWidget {
                           fontSize: 16,
                         ),
                       ),
-                      PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, color: const Color(0xFFB0B0B0), size: 16),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-                        iconSize: 16,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        itemBuilder: (context) {
-                          final items = <PopupMenuItem<String>>[];
-                          if (canAccept && acceptedCount < 3) {
-                            items.add(const PopupMenuItem(value: 'accept', child: Text('채택하기')));
-                          }
-                          items.add(const PopupMenuItem(value: 'report', child: Text('신고하기')));
-                          if (isOwner) {
-                            items.add(const PopupMenuItem(value: 'delete', child: Text('삭제하기')));
-                          }
-                          return items;
-                        },
-                        onSelected: (value) {
-                          if (value == 'accept') _showAcceptCommentDialog(context);
-                          if (value == 'report') {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('신고 기능은 준비 중입니다.')),
-                            );
-                          }
-                          if (value == 'delete') onDeleteComment();
-                        },
+                      const SizedBox(width: 4),
+                      Theme(
+                        data: Theme.of(context).copyWith(
+                          useMaterial3: false,
+                          popupMenuTheme: const PopupMenuThemeData(
+                            color: Colors.white,
+                          ),
+                        ),
+                        child: PopupMenuButton<String>(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 140, minHeight: 0),
+                          iconSize: 16,
+                          icon: const Icon(Icons.more_vert, color: Color(0xFFB0B0B0), size: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          itemBuilder: (context) {
+                            final items = <PopupMenuItem<String>>[];
+                            if (canAccept && acceptedCount < 3) {
+                              items.add(const PopupMenuItem(value: 'accept', child: Text('채택하기')));
+                            }
+                            items.add(const PopupMenuItem(value: 'report', child: Text('신고하기')));
+                            if (isOwner) {
+                              items.add(const PopupMenuItem(value: 'delete', child: Text('삭제하기')));
+                            }
+                            return items;
+                          },
+                          onSelected: (value) {
+                            if (value == 'accept') _showAcceptCommentDialog(context);
+                            if (value == 'report') {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('신고 기능은 준비 중입니다.')),
+                              );
+                            }
+                            if (value == 'delete') onDeleteComment();
+                          },
+                        ),
                       ),
                       if (isAccepted) ...[
                         const SizedBox(width: 8),

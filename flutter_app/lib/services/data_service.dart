@@ -1779,17 +1779,6 @@ class DataService extends ChangeNotifier {
       });
       }
       
-      // 알림 생성
-      await _firestore.collection('notifications').add({
-        'userId': commentAuthorUid,
-        'type': 'comment_adopted',
-        'postId': postId,
-        'postTitle': post.title,
-        'author': post.author,
-        'createdAt': FieldValue.serverTimestamp(),
-        'read': false,
-      });
-      
       // 로컬 상태 업데이트
       final postIndex = _posts.indexWhere((p) => p.id == postId);
       if (postIndex != -1) {
@@ -1886,16 +1875,6 @@ class DataService extends ChangeNotifier {
 
       await addCoins(userId: commentAuthorUid, amount: coinAmount, type: '목탄 댓글 채택', postId: postId);
 
-      await _firestore.collection('notifications').add({
-        'userId': commentAuthorUid,
-        'type': 'comment_adopted',
-        'postId': postId,
-        'postTitle': post.title,
-        'author': post.author,
-        'createdAt': FieldValue.serverTimestamp(),
-        'read': false,
-      });
-
       final postIndex = _posts.indexWhere((p) => p.id == postId);
       if (postIndex != -1) {
         final updatedPost = await getPost(postId);
@@ -1989,16 +1968,6 @@ class DataService extends ChangeNotifier {
       await postRef.update({'comments': comments, 'coalAdoptionDone': true});
 
       await addCoins(userId: commentAuthorUid, amount: coinAmount, type: '석탄 댓글 채택', postId: postId);
-
-      await _firestore.collection('notifications').add({
-        'userId': commentAuthorUid,
-        'type': 'comment_adopted',
-        'postId': postId,
-        'postTitle': post.title,
-        'author': post.author,
-        'createdAt': FieldValue.serverTimestamp(),
-        'read': false,
-      });
 
       final postIndex = _posts.indexWhere((p) => p.id == postId);
       if (postIndex != -1) {

@@ -130,11 +130,12 @@ class CustomTopNavbar extends StatelessWidget implements PreferredSizeWidget {
                           },
                         ),
                         const SizedBox(width: 12),
-                        // 프로필 드롭다운 (CSS: .profile-dropdown)
-                        PopupMenuButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                          icon: Container(
+                        // 프로필 아이콘 탭 시 바로 마이페이지로 이동
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.pushNamed(context, '/profile');
+                          },
+                          child: Container(
                             width: 44,
                             height: 44,
                             decoration: BoxDecoration(
@@ -162,23 +163,6 @@ class CustomTopNavbar extends StatelessWidget implements PreferredSizeWidget {
                               ),
                             ),
                           ),
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'profile',
-                              child: Text('마이페이지'),
-                            ),
-                            const PopupMenuItem(
-                              value: 'logout',
-                              child: Text('로그아웃'),
-                            ),
-                          ],
-                          onSelected: (value) async {
-                            if (value == 'logout') {
-                              await authService.signOut();
-                            } else if (value == 'profile') {
-                              Navigator.pushNamed(context, '/profile');
-                            }
-                          },
                         ),
                       ],
                     );

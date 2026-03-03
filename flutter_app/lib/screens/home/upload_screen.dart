@@ -75,11 +75,6 @@ class _UploadScreenState extends State<UploadScreen> {
       );
 
       if (!mounted) return;
-      
-      // 성공 메시지
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('게시물이 업로드되었습니다!')),
-      );
 
       // 폼 초기화
       _titleController.clear();
