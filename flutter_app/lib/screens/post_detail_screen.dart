@@ -9,6 +9,7 @@ import '../services/data_service.dart';
 import '../services/viewed_posts_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_profile_icon.dart';
+import '../widgets/ban_dialog.dart';
 
 Future<void> _showBanConfirmDialog(
   BuildContext context, {
@@ -224,89 +225,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return isPostOwner ? post.likes.length : 0;
   }
 
-  void _showBanDialog(BuildContext context, DateTime? banUntil) {
-    final String message;
-    if (banUntil != null) {
-      final formatted = DateFormat('yyyy.MM.dd HH:mm').format(banUntil);
-      message = '$formatted 이후부터 정상적인 활동이 가능합니다';
-    } else {
-      message = '차단 해제 시까지 정상적인 활동이 가능합니다';
-    }
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return Dialog(
-          elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const Text(
-                  '차단되었습니다',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF9FA4B3),
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  '자세한 내용은 progstudio38@gmail.com으로 문의해주세요',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF9FA4B3),
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: const Text(
-                      '확인',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Future<void> _toggleLike() async {
     final authService = Provider.of<AuthService>(context, listen: false);
     if (!authService.isLoggedIn) {
@@ -317,7 +235,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (authService.isBanned) {
-      _showBanDialog(context, authService.banUntil);
+      showBanDialog(context, authService.banUntil);
       return;
     }
 
@@ -409,7 +327,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (authService.isBanned) {
-      _showBanDialog(context, authService.banUntil);
+      showBanDialog(context, authService.banUntil);
       return;
     }
 
@@ -483,7 +401,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (authService.isBanned) {
-      _showBanDialog(context, authService.banUntil);
+      showBanDialog(context, authService.banUntil);
       return;
     }
 
@@ -518,7 +436,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (authService.isBanned) {
-      _showBanDialog(context, authService.banUntil);
+      showBanDialog(context, authService.banUntil);
       return;
     }
 
@@ -541,7 +459,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (authService.isBanned) {
-      _showBanDialog(context, authService.banUntil);
+      showBanDialog(context, authService.banUntil);
       return;
     }
 
@@ -571,7 +489,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (authService.isBanned) {
-      _showBanDialog(context, authService.banUntil);
+      showBanDialog(context, authService.banUntil);
       return;
     }
 

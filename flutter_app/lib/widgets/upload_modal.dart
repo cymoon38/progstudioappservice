@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/data_service.dart';
 import '../theme/app_theme.dart';
+import 'ban_dialog.dart';
 
 /// 애드팝콘 SSP 전면 비디오 광고 — 게시물 업로드 중 재생 (업로드와 동시에 전면 광고 표시).
 /// 테스트: AppKey 663451319, Placement ID VIDEO (Interstitial Video). 상용 시 123870086 및 실제 플레이스먼트 ID로 교체.
@@ -149,6 +150,18 @@ class _UploadModalState extends State<UploadModal> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('원본 그림을 선택해주세요.')),
       );
+      return;
+    }
+
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (!authService.isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그인이 필요합니다.')),
+      );
+      return;
+    }
+    if (authService.isBanned) {
+      showBanDialog(context, authService.banUntil);
       return;
     }
 

@@ -48,6 +48,7 @@ void main() async {
       AdPopcornSSP.setLogLevel('Trace');
       print('[AdPopcornSSP] 초기화 완료 (상용), 로그레벨=Trace');
     }
+    // ignore: dead_code
   } else if (kDebugMode) {
     print('[AdPopcornSSP] 디버그: SSP 초기화 생략됨 (_skipSspInitForDebug=true)');
   }

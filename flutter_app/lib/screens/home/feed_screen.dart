@@ -17,6 +17,8 @@ import '../../widgets/app_profile_icon.dart';
 import '../../widgets/upload_modal.dart';
 import '../post_detail_screen.dart';
 import 'notice_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'terms_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -417,7 +419,9 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
     if (_loadFailed) return const SizedBox.shrink();
 
     final screenWidth = MediaQuery.of(context).size.width;
-    final adWidth = screenWidth - 32;
+    // 너무 넓은 화면에서는 최대 폭을 제한해 가운데 카드처럼 보이게 함
+    const double maxAdWidth = 480.0;
+    final adWidth = screenWidth > maxAdWidth ? maxAdWidth : screenWidth;
     final adHeight = _heightForWidth(adWidth);
     // 홈 네이티브 광고: 자르지 않고 전체 노출
     final visibleHeight = adHeight;
@@ -433,58 +437,62 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
     };
 
     if (Platform.isAndroid) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        width: double.infinity,
-        height: visibleHeight,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            key: ValueKey('native_ad_$_placementId'),
-            height: adHeight,
-            child: AndroidView(
-              viewType: _viewType,
-              creationParams: creationParams,
-              creationParamsCodec: const StandardMessageCodec(),
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+          width: adWidth,
+          height: visibleHeight,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              key: ValueKey('native_ad_$_placementId'),
+              height: adHeight,
+              child: AndroidView(
+                viewType: _viewType,
+                creationParams: creationParams,
+                creationParamsCodec: const StandardMessageCodec(),
+              ),
             ),
           ),
         ),
       );
     }
     if (Platform.isIOS) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        width: double.infinity,
-        height: visibleHeight,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            key: const ValueKey('native_ad_NATIVE'),
-            height: adHeight,
-            child: UiKitView(
-              viewType: _viewType,
-              creationParams: creationParams,
-              creationParamsCodec: const StandardMessageCodec(),
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+          width: adWidth,
+          height: visibleHeight,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              key: const ValueKey('native_ad_NATIVE'),
+              height: adHeight,
+              child: UiKitView(
+                viewType: _viewType,
+                creationParams: creationParams,
+                creationParamsCodec: const StandardMessageCodec(),
+              ),
             ),
           ),
         ),
@@ -507,33 +515,6 @@ class _FeatureIconsSection extends StatelessWidget {
         children: [
           Expanded(
             child: _FeatureIcon(
-              icon: Icons.calendar_today,
-              label: '출석체크',
-              onTap: () {
-                // TODO: 출석체크 화면
-              },
-            ),
-          ),
-          Expanded(
-            child: _FeatureIcon(
-              icon: Icons.checklist,
-              label: '미션',
-              onTap: () {
-                // TODO: 미션 화면
-              },
-            ),
-          ),
-          Expanded(
-            child: _FeatureIcon(
-              icon: Icons.shopping_bag,
-              label: '스토어',
-              onTap: () {
-                // TODO: 상점 화면
-              },
-            ),
-          ),
-          Expanded(
-            child: _FeatureIcon(
               icon: Icons.check_circle,
               label: '충전소',
               onTap: () {
@@ -545,9 +526,11 @@ class _FeatureIconsSection extends StatelessWidget {
                   );
                   return;
                 }
-                AdPopcornReward.setUserId(auth.user!.uid);
-                AdPopcornReward.setStyle('코인 충전소', '#667eea');
-                AdPopcornReward.openOfferwall();
+                () async {
+                  AdPopcornReward.setUserId(auth.user!.uid);
+                  AdPopcornReward.setStyle('코인 충전소', '#667eea');
+                  AdPopcornReward.openOfferwall();
+                }();
               },
             ),
           ),
@@ -560,6 +543,34 @@ class _FeatureIconsSection extends StatelessWidget {
                   context,
                   MaterialPageRoute(
                     builder: (_) => const NoticeScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+          Expanded(
+            child: _FeatureIcon(
+              icon: Icons.privacy_tip,
+              label: '개인정보',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PrivacyPolicyScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+          Expanded(
+            child: _FeatureIcon(
+              icon: Icons.description,
+              label: '이용약관',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const TermsScreen(),
                   ),
                 );
               },

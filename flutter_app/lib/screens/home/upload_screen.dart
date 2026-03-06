@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
+import '../../widgets/ban_dialog.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -41,10 +42,6 @@ class _UploadScreenState extends State<UploadScreen> {
       return;
     }
 
-    setState(() {
-      _isUploading = true;
-    });
-
     try {
       final authService = Provider.of<AuthService>(context, listen: false);
       final dataService = Provider.of<DataService>(context, listen: false);
@@ -54,15 +51,13 @@ class _UploadScreenState extends State<UploadScreen> {
       }
 
       if (authService.isBanned) {
-        final until = authService.banUntil;
-        final message = until != null
-            ? '${until.year}.${until.month.toString().padLeft(2, '0')}.${until.day.toString().padLeft(2, '0')} ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')} 이후부터 정상적인 활동이 가능합니다'
-            : '차단 해제 시까지 정상적인 활동이 가능합니다';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+        showBanDialog(context, authService.banUntil);
         return;
       }
+
+      setState(() {
+        _isUploading = true;
+      });
 
       // 이미지 업로드
       final imageUrl = await dataService.uploadImage(

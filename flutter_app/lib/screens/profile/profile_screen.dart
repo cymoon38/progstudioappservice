@@ -221,11 +221,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _isSelectionMode = false;
     });
 
-    // 성공 메시지
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${selectedIds.length}개의 게시물이 삭제되었습니다.')),
-    );
-
     // 백그라운드에서 실제 삭제 작업 수행
     final dataService = Provider.of<DataService>(context, listen: false);
     for (final postId in selectedIds) {

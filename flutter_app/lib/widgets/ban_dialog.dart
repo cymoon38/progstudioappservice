@@ -7,7 +7,7 @@ void showBanDialog(BuildContext context, DateTime? banUntil) {
   final String message;
   if (banUntil != null) {
     final formatted = DateFormat('yyyy.MM.dd').format(banUntil);
-    message = '$formatted 이후 부터 정상적인 활동이 가능합니다';
+    message = '$formatted 이후 부터 활동이 가능합니다';
   } else {
     message = '차단 해제까지 정상적인 활동이 불가능합니다.';
   }
@@ -41,19 +41,19 @@ void showBanDialog(BuildContext context, DateTime? banUntil) {
                 message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   color: Color(0xFF9FA4B3),
-                  height: 1.4,
+                  height: 1.3,
                 ),
               ),
               const SizedBox(height: 4),
               const Text(
-                '자세한 내용은 progstudio38@gmail.com으로 문의해주세요',
+                '문의:progstudio38@gmail.com',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: Color(0xFF9FA4B3),
-                  height: 1.4,
+                  height: 1.3,
                 ),
               ),
               const SizedBox(height: 20),

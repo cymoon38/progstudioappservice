@@ -10,11 +10,15 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ban_dialog.dart';
 import '../post_detail_screen.dart';
 import 'giftcard_detail_screen.dart';
 
 class ShopScreen extends StatefulWidget {
-  const ShopScreen({super.key});
+  const ShopScreen({super.key, this.initialTab = 0});
+
+  /// 0: 아이템, 1: 기프티콘, 2: 보유중
+  final int initialTab;
 
   @override
   State<ShopScreen> createState() => _ShopScreenState();
@@ -24,6 +28,13 @@ class _ShopScreenState extends State<ShopScreen> {
   int _selectedTab = 0; // 0: 아이템, 1: 기프티콘, 2: 보유중
   String _giftCardCategory = '커피/음료'; // 기프티콘 카테고리 상태를 ShopScreen 레벨에서 관리 (기본값: 커피/음료)
   final GlobalKey<_GiftCardListTabSliverState> _giftCardListKey = GlobalKey<_GiftCardListTabSliverState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // 외부에서 initialTab을 넘겨주면 해당 탭부터 시작
+    _selectedTab = widget.initialTab.clamp(0, 2);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +54,8 @@ class _ShopScreenState extends State<ShopScreen> {
             elevation: 0,
             toolbarHeight: 0,
             bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(60),
+              // 탭 버튼·패딩 포함 높이가 넉넉하게 들어가도록 약간 여유를 둠
+              preferredSize: const Size.fromHeight(72),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: const BoxDecoration(
@@ -135,104 +147,26 @@ class _ShopScreenState extends State<ShopScreen> {
     );
   }
 
-  void _showBanDialog(BuildContext context, DateTime? banUntil) {
-    final String message;
-    if (banUntil != null) {
-      final formatted = DateFormat('yyyy.MM.dd HH:mm').format(banUntil);
-      message = '$formatted 이후부터 정상적인 활동이 가능합니다';
-    } else {
-      message = '차단 해제 시까지 정상적인 활동이 가능합니다';
-    }
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return Dialog(
-          elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const Text(
-                  '차단되었습니다',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF9FA4B3),
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  '자세한 내용은 progstudio38@gmail.com으로 문의해주세요',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF9FA4B3),
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: const Text(
-                      '확인',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildTabContentSliver() {
     switch (_selectedTab) {
       case 0:
-        return SliverFillRemaining(
-          hasScrollBody: false,
-          child: _buildItemTab(),
+        // 아이템 탭은 SliverToBoxAdapter + Column 조합으로만 스크롤 처리
+        return SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: _buildItemTab(),
+          ),
         );
       case 1:
         return _buildGiftCardTabSliver();
       case 2:
         return _buildOwnedTabSliver();
       default:
-        return SliverFillRemaining(
-          hasScrollBody: false,
-          child: _buildItemTab(),
+        return SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: _buildItemTab(),
+          ),
         );
     }
   }
@@ -251,36 +185,33 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Widget _buildItemTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 16),
-          _ItemCard(
-            name: '장작',
-            price: 30,
-            description: '게시물을 피드 상단으로 이동시킵니다',
-            onUse: () => _openSelectPostForItem(context, '장작', 30),
-          ),
-          const SizedBox(height: 16),
-          _ItemCard(
-            name: '목탄',
-            price: 100,
-            description:
-                '게시물을 피드 상단에 1시간 고정시킵니다. 100% 채택 기능(50코인)이 추가됩니다.',
-            onUse: () => _openSelectPostForItem(context, '목탄', 100),
-          ),
-          const SizedBox(height: 16),
-          _ItemCard(
-            name: '석탄',
-            price: 500,
-            description:
-                '게시물을 피드 상단에 3시간 고정시킵니다. 100% 채택 기능(300코인)이 추가됩니다.',
-            onUse: () => _openSelectPostForItem(context, '석탄', 500),
-          ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 16),
+        _ItemCard(
+          name: '장작',
+          price: 30,
+          description: '- 게시물을 피드 상단으로 이동시킵니다',
+          onUse: () => _openSelectPostForItem(context, '장작', 30),
+        ),
+        const SizedBox(height: 16),
+        _ItemCard(
+          name: '목탄',
+          price: 100,
+          description:
+              '- 게시물을 피드 상단에 1시간 고정시킵니다\n- 100% 채택 기능(50코인)이 추가됩니다',
+          onUse: () => _openSelectPostForItem(context, '목탄', 100),
+        ),
+        const SizedBox(height: 16),
+        _ItemCard(
+          name: '석탄',
+          price: 500,
+          description:
+              '- 게시물을 피드 상단에 3시간 고정시킵니다\n- 100% 채택 기능(300코인)이 추가됩니다',
+          onUse: () => _openSelectPostForItem(context, '석탄', 500),
+        ),
+      ],
     );
   }
 
@@ -293,7 +224,7 @@ class _ShopScreenState extends State<ShopScreen> {
       return;
     }
     if (authService.isBanned) {
-      _showBanDialog(context, authService.banUntil);
+      showBanDialog(context, authService.banUntil);
       return;
     }
     // 코인 부족 여부 사전 확인 (게시물 선택 화면 열기 전)
@@ -450,7 +381,7 @@ class _ShopScreenState extends State<ShopScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  '$itemName 사용',
+                  '아이템 사용',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 18,
@@ -548,7 +479,7 @@ class _ShopScreenState extends State<ShopScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '선택한 게시물에 $itemName 아이템이 적용되었어요.\n$itemCost코인이 차감되었습니다.',
+                  '선택한 게시물에 아이템이 적용되었어요.\n$itemCost코인이 차감되었습니다.',
                   style: const TextStyle(
                     fontSize: 14,
                     color: Color(0xFF9FA4B3),
@@ -663,12 +594,26 @@ class _ItemCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3ECFF),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Center(
+                    child: Image.asset(
+                      'assets/icons/star.png',
+                      width: 22,
+                      height: 22,
+                      // 인기작품에 쓰이는 불꽃 아이콘을 아이템용으로 파란 계열 톤으로 사용
+                      color: const Color(0xFF4C6FFF),
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.local_fire_department,
+                        color: Color(0xFF4C6FFF),
+                        size: 22,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -854,7 +799,7 @@ class _SelectPostForItemScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text('$itemName 사용할 게시물 선택'),
+        title: const Text('아이템 사용할 게시물 선택'),
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
@@ -898,7 +843,7 @@ class _SelectPostForItemScreen extends StatelessWidget {
                                         CrossAxisAlignment.center,
                                     children: [
                                       Text(
-                                        '$itemName 사용',
+                                        '아이템 사용',
                                         textAlign: TextAlign.center,
                                         style: const TextStyle(
                                           fontSize: 18,
@@ -2000,7 +1945,8 @@ class _CategoryFilterBarState extends State<_CategoryFilterBar> with AutomaticKe
     
     return Container(
       key: const ValueKey('category_filter_bar'),
-      height: 50,
+      // 큰 화면·텍스트 배율에서도 글자가 잘리지 않도록 충분한 높이 확보
+      height: 56,
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: ListView.builder(
         key: const ValueKey('category_list_view'),

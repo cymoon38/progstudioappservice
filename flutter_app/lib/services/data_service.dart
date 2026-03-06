@@ -1112,7 +1112,7 @@ class DataService extends ChangeNotifier {
             final authorName = authorNameFromTx ?? updatedPost.author;
             final likers = updatedPost.likes;
             
-            // 좋아요를 누른 사람들에게 3코인씩 지급 (글쓴이 본인 제외)
+            // 좋아요를 누른 사람들에게 1코인씩 지급 (글쓴이 본인 제외)
             debugPrint('💰 좋아요 누른 사용자들에게 코인 지급 시작...');
             for (final likerUsername in likers) {
               // 글쓴이 본인은 좋아요 보상에서 제외
@@ -1126,7 +1126,7 @@ class DataService extends ChangeNotifier {
                 if (likerUid != null) {
                   await addCoins(
                     userId: likerUid,
-                    amount: 3,
+                    amount: 1,
                     type: '인기작품 선정 보상 (좋아요)',
                     postId: postId,
                   );
@@ -1139,7 +1139,7 @@ class DataService extends ChangeNotifier {
               }
             }
             
-            // 글쓴이에게 10코인 지급
+            // 글쓴이에게 50코인 지급
             debugPrint('💰 글쓴이에게 코인 지급 시작...');
             String? authorUidForCoins = authorUidFromTx;
             
@@ -1153,7 +1153,7 @@ class DataService extends ChangeNotifier {
               try {
                 await addCoins(
                   userId: authorUidForCoins,
-                  amount: 10,
+                  amount: 50,
                   type: '인기작품 선정 보상 (작성자)',
                   postId: postId,
                 );

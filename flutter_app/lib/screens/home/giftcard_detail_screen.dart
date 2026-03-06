@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/ban_dialog.dart';
 
 class GiftCardDetailScreen extends StatefulWidget {
   final String goodsCode;
@@ -95,13 +96,7 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
       return;
     }
     if (authService.isBanned) {
-      final until = authService.banUntil;
-      final message = until != null
-          ? '${until.year}.${until.month.toString().padLeft(2, '0')}.${until.day.toString().padLeft(2, '0')} ${until.hour.toString().padLeft(2, '0')}:${until.minute.toString().padLeft(2, '0')} 이후부터 정상적인 활동이 가능합니다'
-          : '차단 해제 시까지 정상적인 활동이 가능합니다';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      showBanDialog(context, authService.banUntil);
       return;
     }
 
