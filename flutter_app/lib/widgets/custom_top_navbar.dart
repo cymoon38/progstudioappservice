@@ -5,6 +5,8 @@ import '../screens/auth/login_screen.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../services/auth_service.dart';
 import '../services/data_service.dart';
+import 'package:intl/intl.dart';
+
 import '../theme/app_theme.dart';
 import '../widgets/coin_modal.dart';
 
@@ -229,8 +231,9 @@ class CustomTopNavbar extends StatelessWidget implements PreferredSizeWidget {
                             Consumer<AuthService>(
                               builder: (context, authService, _) {
                                 final coins = authService.userData?['coins'] ?? 0;
+                                final coinsInt = coins is int ? coins : int.tryParse('$coins') ?? 0;
                                 return Text(
-                                  coins.toString(),
+                                  NumberFormat('#,###').format(coinsInt),
                               style: const TextStyle(
                                 fontSize: 14.4, // CSS: 0.9rem
                                 fontWeight: FontWeight.w600,

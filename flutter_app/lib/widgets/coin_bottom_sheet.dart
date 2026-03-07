@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/data_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/format_utils.dart';
 
 class CoinBottomSheet extends StatefulWidget {
   const CoinBottomSheet({super.key});
@@ -41,7 +42,9 @@ class _CoinBottomSheetState extends State<CoinBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthService>(context);
-    final coins = (auth.userData?['coins'] ?? 0).toString();
+    final rawCoins = auth.userData?['coins'] ?? 0;
+    final coinsInt = rawCoins is int ? rawCoins : int.tryParse('$rawCoins') ?? 0;
+    final coins = formatCoinsInMan(coinsInt);
 
     return SafeArea(
       child: Padding(

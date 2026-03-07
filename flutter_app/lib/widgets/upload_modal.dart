@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:adpopcornssp_flutter/adpopcornssp_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -9,11 +8,6 @@ import '../services/auth_service.dart';
 import '../services/data_service.dart';
 import '../theme/app_theme.dart';
 import 'ban_dialog.dart';
-
-/// 애드팝콘 SSP 전면 비디오 광고 — 게시물 업로드 중 재생 (업로드와 동시에 전면 광고 표시).
-/// 상용: 앱키 123870086, 캔버스 캐시 동영상 광고 DOXC9iqfgy3QTIn
-const String _kSspAppKey = '123870086';
-const String _kUploadInterstitialVideoPlacementId = 'DOXC9iqfgy3QTin';
 
 class UploadModal extends StatefulWidget {
   const UploadModal({super.key});
@@ -33,32 +27,8 @@ class _UploadModalState extends State<UploadModal> {
   File? _originalImage;
   bool _isUploading = false;
 
-  /// 전면 비디오 광고 로드 완료 여부 (업로드 시 재생용)
-  bool _interstitialVideoReady = false;
   bool _uploadCompleted = false;
-  bool _adClosed = false;
-  bool _adShown = false;
   String? _uploadError;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUploadInterstitialVideo();
-  }
-
-  /// 애드팝콘 SSP 가이드: 전면 비디오 loadInterstitialVideo → 로드 성공 시 showInterstitialVideo
-  void _loadUploadInterstitialVideo() {
-    AdPopcornSSP.loadInterstitialVideo(_kSspAppKey, _kUploadInterstitialVideoPlacementId);
-    final previousSuccess = AdPopcornSSP.interstitialVideoAdLoadSuccessListener;
-    final previousFail = AdPopcornSSP.interstitialVideoAdLoadFailListener;
-    AdPopcornSSP.interstitialVideoAdLoadSuccessListener = (placementId) {
-      if (mounted) setState(() => _interstitialVideoReady = true);
-      AdPopcornSSP.interstitialVideoAdLoadSuccessListener = previousSuccess;
-    };
-    AdPopcornSSP.interstitialVideoAdLoadFailListener = (placementId, errorCode) {
-      AdPopcornSSP.interstitialVideoAdLoadFailListener = previousFail;
-    };
-  }
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -82,7 +52,6 @@ class _UploadModalState extends State<UploadModal> {
     }
   }
 
-  /// 업로드 실행 (전면 비디오는 _uploadPost에서 재생 후 이 메서드와 병렬 진행)
   Future<void> _performUpload() async {
     final authService = Provider.of<AuthService>(context, listen: false);
     final dataService = Provider.of<DataService>(context, listen: false);
@@ -123,7 +92,6 @@ class _UploadModalState extends State<UploadModal> {
 
   void _checkFinish() {
     if (!_uploadCompleted) return;
-    if (_adShown && !_adClosed) return;
     if (!mounted) return;
 
     setState(() => _isUploading = false);
@@ -168,29 +136,11 @@ class _UploadModalState extends State<UploadModal> {
     setState(() {
       _isUploading = true;
       _uploadCompleted = false;
-      _adClosed = false;
-      _adShown = false;
       _uploadError = null;
     });
 
-    // 업로드 백그라운드 실행 (이 동안 전면 비디오 광고 재생)
     final uploadFuture = _performUpload();
 
-    // 전면 비디오 광고 재생 — 업로드와 동시에 재생 (로드되어 있을 때만)
-    if (_interstitialVideoReady) {
-      _adShown = true;
-      final previousClosed = AdPopcornSSP.interstitialVideoAdClosedListener;
-      AdPopcornSSP.interstitialVideoAdClosedListener = (placementId) {
-        AdPopcornSSP.interstitialVideoAdClosedListener = previousClosed;
-        if (mounted) {
-          setState(() => _adClosed = true);
-          _checkFinish();
-        }
-      };
-      AdPopcornSSP.showInterstitialVideo(_kSspAppKey, _kUploadInterstitialVideoPlacementId);
-    }
-
-    // 업로드 완료 시 정리
     uploadFuture.then((_) {
       if (mounted) {
         setState(() => _uploadCompleted = true);

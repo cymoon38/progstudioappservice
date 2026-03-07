@@ -349,36 +349,34 @@ class _GiftCardDetailScreenState extends State<GiftCardDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 이미지 영역 (고화질 2x 캐시로 선명하게 표시)
+                      // 이미지 영역 (고화질 2x 캐시로 선명하게 표시, 여백은 색 없이 스캐폴드 배경만 보이도록)
                       Container(
                         width: double.infinity,
                         height: 350,
-                        color: Colors.grey[100],
+                        color: Colors.transparent,
                         child: _getImageUrl().isNotEmpty
                             ? CachedNetworkImage(
                                 imageUrl: _getImageUrl(),
                                 fit: BoxFit.contain,
                                 memCacheWidth: 800,
                                 memCacheHeight: 800,
-                                placeholder: (context, url) => Container(
-                                  color: Colors.grey[200],
-                                  child: const Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
+                                placeholder: (context, url) => const Center(
+                                  child: CircularProgressIndicator(),
                                 ),
-                                errorWidget: (context, url, error) => Container(
-                                  color: Colors.grey[200],
-                                  child: const Icon(
+                                errorWidget: (context, url, error) => const Center(
+                                  child: Icon(
                                     Icons.image_not_supported,
                                     color: Colors.grey,
                                     size: 64,
                                   ),
                                 ),
                               )
-                            : const Icon(
-                                Icons.image_not_supported,
-                                color: Colors.grey,
-                                size: 64,
+                            : const Center(
+                                child: Icon(
+                                  Icons.image_not_supported,
+                                  color: Colors.grey,
+                                  size: 64,
+                                ),
                               ),
                       ),
                       

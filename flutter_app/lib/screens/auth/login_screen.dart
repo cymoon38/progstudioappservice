@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:adpopcornssp_flutter/adpopcornssp_flutter.dart';
 import '../../services/auth_service.dart';
 import '../home/home_screen.dart';
 import '../../theme/app_theme.dart';
@@ -107,6 +108,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       );
 
       if (!mounted) return;
+      if (authService.user?.uid != null) {
+        await AdPopcornSSP.setUserId(authService.user!.uid);
+      }
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
@@ -163,6 +168,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         _signupPasswordController.text,
       );
 
+      if (!mounted) return;
+      if (authService.user?.uid != null) {
+        await AdPopcornSSP.setUserId(authService.user!.uid);
+      }
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),

@@ -1,17 +1,20 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
+import 'package:adpopcornreward/adpopcornreward.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../../services/adpopcorn_ssp_state.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/format_utils.dart';
 import '../../widgets/upload_modal.dart';
 import 'home_screen.dart';
+
+/// 캠페인 참여하기(오퍼월) 미션 지급 코인. 애드팝콘 오퍼월 연동 가이드의 "오퍼월 적립 가능 리워드 정보 조회" API 연동 시 해당 값으로 교체.
+const int _kOfferwallCampaignRewardCoins = 100;
 
 class MissionScreen extends StatefulWidget {
   const MissionScreen({super.key});
@@ -19,6 +22,9 @@ class MissionScreen extends StatefulWidget {
   @override
   State<MissionScreen> createState() => _MissionScreenState();
 }
+
+/// 오퍼월 적립 가능 리워드 정보 조회용 MethodChannel (Android MainActivity와 동일 이름)
+const _kOfferwallRewardChannel = MethodChannel('com.example.flutter_app/offerwall_reward');
 
 class _MissionScreenState extends State<MissionScreen> {
   bool _isLoadingMissions = true;
@@ -28,14 +34,37 @@ class _MissionScreenState extends State<MissionScreen> {
   int _userPostCount = 0; // 사용자가 업로드한 게시물 수
   StreamSubscription? _notificationSubscription;
   bool _isPopupOpen = false; // 팝업 중복 방지
+  /// 캠페인 참여하기 카드에 표시할 코인. API 조회 성공 시 갱신, 실패 시 _kOfferwallCampaignRewardCoins 유지.
+  int _offerwallRewardCoins = _kOfferwallCampaignRewardCoins;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadMissions();
+      _loadOfferwallRewardInfo();
       _listenForMissionNotifications();
     });
+  }
+
+  /// 애드팝콘 오퍼월 적립 가능 총 리워드 정보 조회 후 _offerwallRewardCoins 갱신
+  Future<void> _loadOfferwallRewardInfo() async {
+    try {
+      final dynamic raw = await _kOfferwallRewardChannel.invokeMethod<dynamic>('getOfferwallTotalRewardInfo');
+      if (raw is! Map) return;
+      final queryResult = raw['queryResult'] as bool? ?? false;
+      final totalReward = raw['totalReward'] as String? ?? '0';
+      if (!queryResult) return;
+      final cleaned = totalReward.replaceAll(',', '').trim();
+      final parsed = int.tryParse(cleaned);
+      if (parsed != null && parsed >= 0 && mounted) {
+        setState(() => _offerwallRewardCoins = parsed);
+      }
+    } on PlatformException catch (e) {
+      debugPrint('오퍼월 리워드 정보 조회 실패 (기본값 유지): ${e.message}');
+    } catch (_) {
+      // iOS 등 미구현 플랫폼에서는 기본값 유지
+    }
   }
 
 
@@ -599,10 +628,6 @@ class _MissionScreenState extends State<MissionScreen> {
               child: CustomScrollView(
                 physics: const ClampingScrollPhysics(),
                 slivers: [
-                  // 상단 네비게이션 아래 네이티브 광고 (캔버스 캐시 미션 상단 네이티브)
-                  const SliverToBoxAdapter(
-                    child: _MissionAdBanner(),
-                  ),
                   // 통계 카드
                   SliverToBoxAdapter(
                     child: Container(
@@ -708,22 +733,32 @@ class _MissionScreenState extends State<MissionScreen> {
                                 );
                               }
                               
-                              if (availableMissions.isEmpty) {
-                                return Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(48),
-                                    child: Text(
-                                      '진행 가능한 미션이 없습니다.',
-                                      style: TextStyle(
-                                        color: AppTheme.textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }
-                              
                               return Column(
-                                children: availableMissions.map((mission) {
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _OfferwallCampaignCard(
+                                    rewardCoins: _offerwallRewardCoins,
+                                    onTap: () {
+                                      if (authService.user?.uid == null) return;
+                                      AdPopcornReward.setUserId(authService.user!.uid);
+                                      AdPopcornReward.setStyle('코인 충전소', '#667eea');
+                                      AdPopcornReward.openOfferwall();
+                                    },
+                                    isLoggedIn: authService.user != null,
+                                  ),
+                                  if (availableMissions.isEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.all(48),
+                                      child: Text(
+                                        '진행 가능한 미션이 없습니다.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: AppTheme.textSecondary,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    ...availableMissions.map((mission) {
                               final userMission = dataService.userMissions[mission.id];
                               final isCompleted = userMission?.completed ?? false;
                               final progress = userMission?.progress ?? 0;
@@ -796,7 +831,8 @@ class _MissionScreenState extends State<MissionScreen> {
                                         ? () => _showTimeLimitedMissionPopup(context, mission)
                                         : null,
                               );
-                                }).toList(),
+                                    }).toList(),
+                                ],
                               );
                             },
                           ),
@@ -819,102 +855,114 @@ class _MissionScreenState extends State<MissionScreen> {
   }
 }
 
-/// 미션 페이지 상단 네이티브 광고 (캔버스 캐시 미션 상단 네이티브)
-class _MissionAdBanner extends StatefulWidget {
-  const _MissionAdBanner();
+/// 고정 미션: 캠페인 참여하기 — 오퍼월 이동 버튼. 지급 코인은 _kOfferwallCampaignRewardCoins(가이드 '오퍼월 적립 가능 리워드 정보 조회' 연동 시 반영).
+class _OfferwallCampaignCard extends StatelessWidget {
+  final int rewardCoins;
+  final VoidCallback? onTap;
+  final bool isLoggedIn;
 
-  @override
-  State<_MissionAdBanner> createState() => _MissionAdBannerState();
-}
-
-class _MissionAdBannerState extends State<_MissionAdBanner> {
-  static const String _viewType = 'AdPopcornSSPNativeView';
-  static const String _appKey = '123870086';
-  static const String _placementId = 'RBaJEGYIBLNXqNs'; // 캔버스 캐시 미션 상단 네이티브
-  static const double _adWidthMax = 360;
-  static const double _adHeight = 50; // 요청 높이 (NAM 360x50)
-  /// 테스트 시 크리에이티브가 더 크게 올 수 있어 잘림 방지용 표시 높이
-  static const double _visibleHeight = 80;
-
-  bool _loadFailed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    adPopcornMissionNativeAdLoadFailed.addListener(_onLoadFailedChanged);
-  }
-
-  void _onLoadFailedChanged() {
-    if (!mounted) return;
-    if (!adPopcornMissionNativeAdLoadFailed.value) return;
-    if (_loadFailed) return;
-    setState(() => _loadFailed = true);
-  }
-
-  @override
-  void dispose() {
-    adPopcornMissionNativeAdLoadFailed.removeListener(_onLoadFailedChanged);
-    super.dispose();
-  }
+  const _OfferwallCampaignCard({
+    required this.rewardCoins,
+    this.onTap,
+    required this.isLoggedIn,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (_loadFailed) return const SizedBox.shrink();
-
-    final screenWidth = MediaQuery.of(context).size.width;
-    final adWidth = (screenWidth - 32).clamp(0.0, _adWidthMax);
-    final adHeight = _adHeight;
-
-    final creationParams = <String, dynamic>{
-      'appKey': _appKey,
-      'placementId': _placementId,
-      if (Platform.isAndroid) ...{
-        'width': adWidth.round(),
-        'height': adHeight.round(),
-      },
-    };
-
-    if (Platform.isAndroid) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        width: double.infinity,
-        height: _visibleHeight,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            key: ValueKey('native_ad_mission_$_placementId'),
-            width: adWidth,
-            height: _visibleHeight,
-            child: AndroidView(
-              viewType: _viewType,
-              creationParams: creationParams,
-              creationParamsCodec: const StandardMessageCodec(),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Material(
+        color: const Color(0xFFF8F9FF),
+        borderRadius: BorderRadius.circular(15),
+        child: InkWell(
+          onTap: isLoggedIn ? onTap : null,
+          borderRadius: BorderRadius.circular(15),
+          child: Opacity(
+            opacity: isLoggedIn ? 1 : 0.7,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '캠페인 참여하기',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatCoinsInMan(rewardCoins),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'C',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      );
-    }
-    if (Platform.isIOS) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        width: double.infinity,
-        height: _visibleHeight,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            key: ValueKey('native_ad_mission_$_placementId'),
-            width: adWidth,
-            height: _visibleHeight,
-            child: UiKitView(
-              viewType: _viewType,
-              creationParams: creationParams,
-              creationParamsCodec: const StandardMessageCodec(),
-            ),
-          ),
-        ),
-      );
-    }
-    return const SizedBox.shrink();
+      ),
+    );
   }
 }
 
@@ -1081,7 +1129,7 @@ class _MissionCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '${NumberFormat('#,###').format(mission.reward)}',
+                          '${formatCoinsInMan(mission.reward)}',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,

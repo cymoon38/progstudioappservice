@@ -159,7 +159,7 @@ public class AdPopcornSSPPlugin implements FlutterPlugin, ActivityAware, MethodC
         callGetRewardAdPlusUserPlacementStatus(call, result);
       } else if (call.method.equals("setRewardAdPlusEventListener")) {
         callSetRewardAdPlusEventListener(call, result);
-      }  else {
+      } else {
         result.notImplemented();
       }
     }catch (Exception e){}
@@ -191,6 +191,7 @@ public class AdPopcornSSPPlugin implements FlutterPlugin, ActivityAware, MethodC
       return;
     }
     AdPopcornSSP.setUserId(context, userId);
+    result.success(null);
   }
 
   private void callSetLogEnable(@NonNull MethodCall call, @NonNull Result result)

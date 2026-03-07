@@ -1,11 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../services/data_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/format_utils.dart';
 
 class CoinModal extends StatefulWidget {
   const CoinModal({super.key});
@@ -96,7 +96,8 @@ class _CoinModalState extends State<CoinModal> {
     }
 
     final coins = auth.userData?['coins'] ?? 0;
-    final coinsFormatted = NumberFormat('#,###').format(coins);
+    final coinsInt = coins is int ? coins : int.tryParse('$coins') ?? 0;
+    final coinsFormatted = formatCoinsInMan(coinsInt);
 
     return Dialog(
       backgroundColor: Colors.black.withOpacity(0.7), // CSS: rgba(0, 0, 0, 0.7)
@@ -311,8 +312,7 @@ class _CoinModalState extends State<CoinModal> {
                                       final date = '$year년 $month월 $day일 $hour:$minute';
                                       final amountClass = item.amount > 0 ? 'positive' : 'negative';
                                       final amountSign = item.amount > 0 ? '+' : '';
-                                      final amountFormatted =
-                                          NumberFormat('#,###').format(item.amount);
+                                      final amountFormatted = formatCoinsInMan(item.amount);
 
                                       return InkWell(
                                         onTap: () {},

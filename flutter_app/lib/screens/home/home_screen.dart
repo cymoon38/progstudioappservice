@@ -10,6 +10,7 @@ import '../../widgets/custom_bottom_navbar.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../services/viewed_posts_service.dart';
+import 'package:adpopcornssp_flutter/adpopcornssp_flutter.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,6 +21,7 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  String? _lastSetUid;
 
   final List<Widget> _screens = [
     const FeedScreen(),
@@ -36,15 +38,44 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _applyUserId(AuthService authService) {
+    final uid = authService.user?.uid;
+    if (uid != null && uid.isNotEmpty && uid != _lastSetUid) {
+      _lastSetUid = uid;
+      AdPopcornSSP.setUserId(uid);
+    }
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final viewedPostsService = Provider.of<ViewedPostsService>(context, listen: false);
+    viewedPostsService.setUserId(authService.user?.uid);
+    _applyUserId(authService);
+  }
+
   @override
-  Widget build(BuildContext context) {
-    // 사용자 변경 시 본 게시물 서비스 업데이트
+  void initState() {
+    super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authService = Provider.of<AuthService>(context, listen: false);
       final viewedPostsService = Provider.of<ViewedPostsService>(context, listen: false);
       viewedPostsService.setUserId(authService.user?.uid);
+      _applyUserId(authService);
+      authService.addListener(_onAuthChanged);
     });
+  }
 
+  @override
+  void dispose() {
+    try {
+      Provider.of<AuthService>(context, listen: false).removeListener(_onAuthChanged);
+    } catch (_) {}
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: const CustomTopNavbar(),

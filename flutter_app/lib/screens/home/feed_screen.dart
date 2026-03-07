@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:adpopcornreward/adpopcornreward.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/adpopcorn_config.dart';
-import '../../services/adpopcorn_ssp_state.dart';
 import '../../services/auth_service.dart';
 import '../../services/data_service.dart';
 import '../../services/viewed_posts_service.dart';
@@ -60,6 +59,51 @@ class _FeedScreenState extends State<FeedScreen> {
     super.dispose();
   }
 
+  /// 댓글 채택 알림을 알림 모달 스타일로 표시 (notification tile 스타일)
+  Future<void> _showAdoptionModal(
+    BuildContext context, {
+    required int coinAmount,
+    required String postTitle,
+    required List<Map<String, dynamic>> adoptable,
+    required Future<void> Function(Map<String, dynamic> item) onSelect,
+    required String successMessage,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AdoptionModalContent(
+        coinAmount: coinAmount,
+        postTitle: postTitle,
+        adoptable: adoptable,
+        onSelect: onSelect,
+        successMessage: successMessage,
+      ),
+    );
+  }
+
+  /// 디버그 전용: 실제 아이템 사용 없이 채택 모달 UI 테스트 (kDebugMode에서만 노출)
+  void _showAdoptionModalTest(BuildContext context) {
+    const mockAdoptable = [
+      {'author': '테스트유저1', 'text': '첫 번째 댓글 내용입니다.', 'commentId': 'mock1', 'commentIndex': 0, 'replyPath': null},
+      {'author': '테스트유저2', 'text': '두 번째 댓글 미리보기 텍스트입니다.', 'commentId': 'mock2', 'commentIndex': 1, 'replyPath': null},
+      {'author': '테스트유저3', 'text': '세 번째 댓글을 선택한 뒤 확인 버튼을 누르면 채택됩니다.ㅇㄴㅁㄹㅇㅁ놂ㅇㄴ렁널;ㅁㄴ얼;ㅣㅓㅇㄴ;ㅣ러;민어링너;미러;ㅣㅇ넘ㄹ;ㅣㅓㅇㄴ;ㅣㅓㄹ;이널;ㅣㅓㅇㄹ;ㅣㅁ넝리ㅓㅇ니ㅏㅏ', 'commentId': 'mock3', 'commentIndex': 2, 'replyPath': null},
+      {'author': '테스트유저4', 'text': '네 번째 댓글입니다. 스크롤 테스트용.', 'commentId': 'mock4', 'commentIndex': 3, 'replyPath': null},
+      {'author': '테스트유저5', 'text': '다섯 번째 댓글입니다.', 'commentId': 'mock5', 'commentIndex': 4, 'replyPath': null},
+      {'author': '테스트유저6', 'text': '여섯 번째 댓글까지 스크롤할 수 있습니다.', 'commentId': 'mock6', 'commentIndex': 5, 'replyPath': null},
+    ];
+    _showAdoptionModal(
+      context,
+      coinAmount: 50,
+      postTitle: '[테스트] 채택 모달 확인',
+      adoptable: mockAdoptable,
+      onSelect: (_) async {
+        await Future.delayed(const Duration(milliseconds: 100));
+      },
+      successMessage: '테스트: 댓글을 50코인으로 채택했습니다.',
+    );
+  }
+
   /// 목탄 사용 후 24h~48h: 댓글 채택 다이얼로그(50코인), 48h 경과: 랜덤 채택
   Future<void> _checkCharcoalAdoptionDialog(BuildContext context) async {
     final authService = Provider.of<AuthService>(context, listen: false);
@@ -92,65 +136,23 @@ class _FeedScreenState extends State<FeedScreen> {
       return;
     }
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('댓글 채택하기'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '목탄을 사용한 게시물 "${post.title}"의 댓글 중 한 명을 50코인으로 채택해 주세요.',
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              ...adoptable.map((item) {
-                final text = item['text'] as String;
-                final preview = text.length > 20 ? '${text.substring(0, 20)}...' : text;
-                return ListTile(
-                  title: Text('${item['author']}'),
-                  subtitle: Text(preview),
-                  dense: true,
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final replyPath = item['replyPath'] as List<int>?;
-                    try {
-                      await dataService.acceptCommentCharcoal(
-                        postId: post.id,
-                        commentId: item['commentId'] as String,
-                        commentAuthorUsername: item['author'] as String,
-                        postAuthorUid: freshPost.authorUid ?? uid,
-                        commentIndex: item['commentIndex'] as int,
-                        replyPath: replyPath != null && replyPath.isNotEmpty ? replyPath : null,
-                      );
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          const SnackBar(content: Text('댓글을 50코인으로 채택했습니다.')),
-                        );
-                      }
-                    } catch (e) {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text('채택 실패: $e'), backgroundColor: Colors.red),
-                        );
-                      }
-                    }
-                  },
-                );
-              }),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('나중에'),
-          ),
-        ],
-      ),
+    await _showAdoptionModal(
+      context,
+      coinAmount: 50,
+      postTitle: post.title,
+      adoptable: adoptable,
+      onSelect: (item) async {
+        final replyPath = item['replyPath'] as List<int>?;
+        await dataService.acceptCommentCharcoal(
+          postId: post.id,
+          commentId: item['commentId'] as String,
+          commentAuthorUsername: item['author'] as String,
+          postAuthorUid: freshPost.authorUid ?? uid,
+          commentIndex: item['commentIndex'] as int,
+          replyPath: replyPath != null && replyPath.isNotEmpty ? replyPath : null,
+        );
+      },
+      successMessage: '댓글을 50코인으로 채택했습니다.',
     );
   }
 
@@ -186,65 +188,23 @@ class _FeedScreenState extends State<FeedScreen> {
       return;
     }
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('댓글 채택하기'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '석탄을 사용한 게시물 "${post.title}"의 댓글 중 한 명을 300코인으로 채택해 주세요.',
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              ...adoptable.map((item) {
-                final text = item['text'] as String;
-                final preview = text.length > 20 ? '${text.substring(0, 20)}...' : text;
-                return ListTile(
-                  title: Text('${item['author']}'),
-                  subtitle: Text(preview),
-                  dense: true,
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final replyPath = item['replyPath'] as List<int>?;
-                    try {
-                      await dataService.acceptCommentCoal(
-                        postId: post.id,
-                        commentId: item['commentId'] as String,
-                        commentAuthorUsername: item['author'] as String,
-                        postAuthorUid: freshPost.authorUid ?? uid,
-                        commentIndex: item['commentIndex'] as int,
-                        replyPath: replyPath != null && replyPath.isNotEmpty ? replyPath : null,
-                      );
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          const SnackBar(content: Text('댓글을 300코인으로 채택했습니다.')),
-                        );
-                      }
-                    } catch (e) {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(content: Text('채택 실패: $e'), backgroundColor: Colors.red),
-                        );
-                      }
-                    }
-                  },
-                );
-              }),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('나중에'),
-          ),
-        ],
-      ),
+    await _showAdoptionModal(
+      context,
+      coinAmount: 300,
+      postTitle: post.title,
+      adoptable: adoptable,
+      onSelect: (item) async {
+        final replyPath = item['replyPath'] as List<int>?;
+        await dataService.acceptCommentCoal(
+          postId: post.id,
+          commentId: item['commentId'] as String,
+          commentAuthorUsername: item['author'] as String,
+          postAuthorUid: freshPost.authorUid ?? uid,
+          commentIndex: item['commentIndex'] as int,
+          replyPath: replyPath != null && replyPath.isNotEmpty ? replyPath : null,
+        );
+      },
+      successMessage: '댓글을 300코인으로 채택했습니다.',
     );
   }
 
@@ -287,9 +247,36 @@ class _FeedScreenState extends State<FeedScreen> {
                       parent: ClampingScrollPhysics(),
                     ),
                     slivers: [
-                      SliverToBoxAdapter(child: _AdBannerSection()),
                       SliverToBoxAdapter(child: _FeatureIconsSection()),
                       SliverToBoxAdapter(child: _MissionPreviewSection()),
+                      if (kDebugMode)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: GestureDetector(
+                              onTap: () => _showAdoptionModalTest(context),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.orange.withOpacity(0.4)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.bug_report, size: 16, color: Colors.orange.shade700),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '채택 모달 테스트',
+                                      style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       if (dataService.isLoading)
                         const SliverFillRemaining(
                           child: Center(child: CircularProgressIndicator()),
@@ -393,127 +380,357 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 }
 
-// 네이티브 광고 (애드팝콘 SSP) - 상용: 앱키 123870086, 캔버스 캐시 홈 네이티브
-// [가이드] 네이티브는 사용자 환경에 맞춰 자동 최적화. width/height를 creationParams로 전달해 화면 크기별 요청( setReactNativeWidth/Height ).
-// 플레이스먼트 허용 사이즈 1200x627 → 요청 크기를 이 비율로 맞춰 5002(No Ad) 방지
-//
-// [가이드] 광고가 나올 때도 있고 안 나올 때도 있는 이유:
-// - 광고 재고(fill)는 항상 보장되지 않음. 수요·지역·시간·타깃(adid) 등에 따라 간헐적 노출은 정상.
-// - loadAd 실패 시 재호출 금지 (과도한 요청 시 block 사유). 현재 구현은 실패 시 슬롯만 숨김.
-// - 5002(No Ad): 서버에 해당 조건의 광고 없음. 콘솔·미디에이션·광고 ID 설정 확인 권장.
-//
-// [필률 높이기] 안 나오는 경우를 줄이려면 (코드 재호출 X, 아래만 권장):
-// 1) 콘솔: 미디에이션에 광고 네트워크 추가, 플로어 가격·타깃 조정, 해당 플레이스먼트 노출 조건 확인.
-// 2) 기기: AD_ID 권한·개인맞춤 광고 허용 시 타깃팅 개선으로 필 가능성 상승 (이미 manifest에 AD_ID 반영).
-// 3) 플레이스먼트: 네이티브보다 배너가 필이 잘 나오는 경우 있음. 콘솔에서 배너 플레이스먼트 추가 후 테스트 권장.
-class _AdBannerSection extends StatefulWidget {
+/// 알림 모달 스타일의 댓글 채택 UI (notifications_screen 타일과 동일한 디자인)
+class _AdoptionModalContent extends StatefulWidget {
+  const _AdoptionModalContent({
+    required this.coinAmount,
+    required this.postTitle,
+    required this.adoptable,
+    required this.onSelect,
+    required this.successMessage,
+  });
+
+  final int coinAmount;
+  final String postTitle;
+  final List<Map<String, dynamic>> adoptable;
+  final Future<void> Function(Map<String, dynamic> item) onSelect;
+  final String successMessage;
+
   @override
-  State<_AdBannerSection> createState() => _AdBannerSectionState();
+  State<_AdoptionModalContent> createState() => _AdoptionModalContentState();
 }
 
-class _AdBannerSectionState extends State<_AdBannerSection> {
-  static const String _viewType = 'AdPopcornSSPNativeView';
-  static const String _appKey = '123870086';
-  static const String _placementId = 'RMArXdt3NJV48Ph'; // 캔버스 캐시 홈 네이티브
-
-  /// 플레이스먼트 허용 비율 1200:627 유지. 기기 폭에 맞춰 같은 비율로만 스케일.
-  static double _heightForWidth(double width) {
-    return width * 627 / 1200;
-  }
-
-  bool _loadFailed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    adPopcornNativeAdLoadFailed.addListener(_onLoadFailedChanged);
-  }
-
-  void _onLoadFailedChanged() {
-    if (!mounted) return;
-    if (!adPopcornNativeAdLoadFailed.value) return;
-    if (_loadFailed) return; // 이미 실패 상태면 setState 스킵 (중복 방지)
-    setState(() => _loadFailed = true);
-  }
-
-  @override
-  void dispose() {
-    adPopcornNativeAdLoadFailed.removeListener(_onLoadFailedChanged);
-    super.dispose();
-  }
+class _AdoptionModalContentState extends State<_AdoptionModalContent> {
+  int? _selectedIndex;
+  int? _expandedIndex;
 
   @override
   Widget build(BuildContext context) {
-    // 앱 중단 원인 확인용: true면 광고 섹션 자체를 숨김 (테스트 후 반드시 false로 복구)
-    const bool _hideAdSectionForDebug = false;
-    // ignore: dead_code
-    if (_hideAdSectionForDebug) return const SizedBox.shrink();
-    if (_loadFailed) return const SizedBox.shrink();
-
-    // 실제 이 위젯이 차지하는 가로 폭(버튼 박스와 동일)으로 광고 크기 계산 → 기기/레이아웃이 달라도 같은 비율 유지
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const double horizontalMargin = 16;
-        final contentMaxWidth = constraints.maxWidth;
-        final adWidth = (contentMaxWidth - horizontalMargin * 2).clamp(0.0, double.infinity);
-        final adHeight = _heightForWidth(adWidth);
-        final visibleHeight = adHeight;
-
-        final creationParams = <String, dynamic>{
-          'appKey': _appKey,
-          'placementId': _placementId,
-          if (Platform.isAndroid) ...{
-            'width': adWidth.round(),
-            'height': adHeight.round(),
-          },
-        };
-
-        Widget wrapAd(Widget ad) => Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          width: adWidth,
-          height: visibleHeight,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 20),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '아이템을 사용한 게시물의 댓글을 채택해주세요',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
               ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: ad,
-          ),
-        );
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  itemCount: widget.adoptable.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, i) {
+                  final item = widget.adoptable[i];
+                  final fullText = item['text'] as String;
+                  final preview = fullText.length > 20 ? '${fullText.substring(0, 20)}...' : fullText;
+                  final author = item['author'] as String;
+                  return _AdoptionCommentTile(
+                    author: author,
+                    fullText: fullText,
+                    preview: preview,
+                    isExpanded: _expandedIndex == i,
+                    isSelected: _selectedIndex == i,
+                    onRowTap: () => setState(() {
+                      _expandedIndex = _expandedIndex == i ? null : i;
+                    }),
+                    onCheckTap: () => setState(() => _selectedIndex = i),
+                  );
+                },
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        side: const BorderSide(color: Color(0xFFE3E5EC)),
+                        backgroundColor: const Color(0xFFF5F6FA),
+                      ),
+                      child: const Text(
+                        '나중에',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: Color(0xFF555B6B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _selectedIndex == null
+                          ? null
+                          : () async {
+                              final item = widget.adoptable[_selectedIndex!];
+                              Navigator.pop(context);
+                              try {
+                                await widget.onSelect(item);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(widget.successMessage)),
+                                  );
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('채택 실패: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _selectedIndex == null ? Colors.grey : AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 4,
+                        shadowColor: Colors.black.withOpacity(0.3),
+                      ),
+                      child: const Text(
+                        '확인',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-        if (Platform.isAndroid) {
-          return wrapAd(SizedBox(
-            key: ValueKey('native_ad_$_placementId'),
-            width: adWidth,
-            height: visibleHeight,
-            child: AndroidView(
-              viewType: _viewType,
-              creationParams: creationParams,
-              creationParamsCodec: const StandardMessageCodec(),
+/// 알림 타일과 동일 스타일: 흰 배경, 테두리, 아이콘 박스 + 텍스트
+class _AdoptionModalTile extends StatelessWidget {
+  const _AdoptionModalTile({
+    required this.icon,
+    required this.iconColor,
+    required this.text,
+    this.subtitle,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String text;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE6E8F0)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F5FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
             ),
-          ));
-        }
-        if (Platform.isIOS) {
-          return wrapAd(SizedBox(
-            key: const ValueKey('native_ad_NATIVE'),
-            width: adWidth,
-            height: visibleHeight,
-            child: UiKitView(
-              viewType: _viewType,
-              creationParams: creationParams,
-              creationParamsCodec: const StandardMessageCodec(),
+            const SizedBox(width: 12),
+            Expanded(
+              child: subtitle == null
+                  ? Text(
+                      text,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.textPrimary,
+                          ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 6),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Text(
+                              subtitle!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w300,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
             ),
-          ));
-        }
-        return const SizedBox.shrink();
-      },
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 채택 가능 댓글 (탭 시 펼쳐서 전체 내용, 선택은 체크 버튼만)
+class _AdoptionCommentTile extends StatelessWidget {
+  const _AdoptionCommentTile({
+    required this.author,
+    required this.fullText,
+    required this.preview,
+    required this.isExpanded,
+    required this.isSelected,
+    required this.onRowTap,
+    required this.onCheckTap,
+  });
+
+  final String author;
+  final String fullText;
+  final String preview;
+  final bool isExpanded;
+  final bool isSelected;
+  final VoidCallback onRowTap;
+  final VoidCallback onCheckTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isSelected ? AppTheme.primaryColor : const Color(0xFFE6E8F0),
+          width: isSelected ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onRowTap,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F5FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.comment, color: AppTheme.primaryColor, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            author,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            isExpanded ? fullText : preview,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondary,
+                              height: 1.4,
+                            ),
+                            maxLines: isExpanded ? null : 1,
+                            overflow: isExpanded ? null : TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: onCheckTap,
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          isSelected ? Icons.check_circle : Icons.check_circle_outline,
+                          color: isSelected ? AppTheme.primaryColor : AppTheme.textTertiary,
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

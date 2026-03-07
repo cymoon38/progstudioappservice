@@ -19,6 +19,7 @@ import 'package:adpopcornssp_flutter/adpopcornssp_flutter.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 import 'services/adpopcorn_ssp_state.dart';
+import 'services/offerwall_reward_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,6 +34,8 @@ void main() async {
     AdPopcornReward.setAppKeyAndHashKey(AdPopcornConfig.appKey, AdPopcornConfig.hashKey);
     AdPopcornReward.setLogEnable(kDebugMode);
   }
+  // 개인정보 동의 무조건 동의로 설정 (가이드 개인정보 동의 처리 API)
+  OfferwallRewardService.setAgreePrivacy(true);
 
   // 애드팝콘 SSP SDK 초기화 (상용: AppKey 123870086)
   // 앱 중단 원인 확인용: true로 두면 SSP 초기화 생략 (테스트 후 반드시 false로 복구)

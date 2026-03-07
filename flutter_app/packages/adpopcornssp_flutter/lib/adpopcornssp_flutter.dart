@@ -166,11 +166,10 @@ class AdPopcornSSP {
     });
   }
   
-  static void setUserId(String userId) {
-    //register callback method handler
+  /// 네이티브에 uid 전달(uid_token). 완료될 때까지 await 후 광고 요청하면 uid_token이 채워짐.
+  static Future<void> setUserId(String userId) async {
     _channel.setMethodCallHandler(_handleMethod);
-
-    _channel.invokeMethod('setUserId', <String, dynamic>{
+    await _channel.invokeMethod('setUserId', <String, dynamic>{
       'userId': userId,
     });
   }
