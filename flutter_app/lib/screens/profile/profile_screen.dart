@@ -5,6 +5,7 @@ import '../../services/data_service.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../post_detail_screen.dart';
+import '../auth/welcome_screen.dart';
 import '../../widgets/app_profile_icon.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -231,6 +232,114 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // 게시물 목록 새로고침
     _loadUserPosts();
+  }
+
+  /// 탈퇴 확인 다이얼로그 (알림 디자인: 예 / 아니오)
+  Future<void> _showWithdrawConfirmDialog(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text(
+                  '정말 탈퇴하시겠습니까?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '회원정보만 삭제되며, 작성한 게시물·댓글은 유지됩니다.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF9FA4B3),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          side: const BorderSide(color: Color(0xFFE3E5EC)),
+                          backgroundColor: const Color(0xFFF5F6FA),
+                        ),
+                        child: const Text(
+                          '아니오',
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: Color(0xFF555B6B),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text(
+                          '예',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      await authService.withdrawAccount();
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('탈퇴 처리 중 오류가 발생했습니다: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -586,7 +695,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // 로그아웃 버튼 (하단)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                       child: SizedBox(
                         width: double.infinity,
                         child: OutlinedButton(
@@ -594,7 +703,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             final authService = Provider.of<AuthService>(context, listen: false);
                             await authService.signOut();
                             if (context.mounted) {
-                              Navigator.of(context).popUntil((route) => route.isFirst);
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                                (route) => false,
+                              );
                             }
                           },
                           style: OutlinedButton.styleFrom(
@@ -610,6 +722,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             style: TextStyle(
                               fontSize: 15,
                               color: Color(0xFF555B6B),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // 탈퇴하기 버튼
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () => _showWithdrawConfirmDialog(context),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            side: const BorderSide(color: Color(0xFFE3E5EC)),
+                            backgroundColor: Colors.white,
+                          ),
+                          child: const Text(
+                            '탈퇴하기',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Color(0xFF9FA4B3),
                               fontWeight: FontWeight.w600,
                             ),
                           ),

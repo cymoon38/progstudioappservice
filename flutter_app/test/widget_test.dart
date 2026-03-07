@@ -16,7 +16,7 @@ void main() {
     
     // MaterialApp이 제대로 생성되는지 확인
     final materialApp = MaterialApp(
-      title: '그림 커뮤니티',
+      title: '캔버스 캐시',
       home: Scaffold(
         body: Center(
           child: Text('테스트'),

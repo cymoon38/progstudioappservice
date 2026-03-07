@@ -67,6 +67,71 @@ class _MissionScreenState extends State<MissionScreen> {
     }
   }
 
+  /// 코인 부족 알림 (기프티콘 구매 시와 동일한 다이얼로그 디자인)
+  static Future<void> _showCoinShortageDialog(BuildContext context, {required String message}) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          elevation: 0,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text(
+                  '코인이 부족합니다',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF9FA4B3),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text(
+                      '확인',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   void dispose() {
@@ -317,9 +382,9 @@ class _MissionScreenState extends State<MissionScreen> {
                 // 설명 문구
                 Text(
                   mission.type == 'like_click'
-                      ? '일주일 동안 좋아요 3개를 누르세요'
+                      ? '30일 동안 좋아요 200개를 누르세요'
                       : mission.type == 'popular_once'
-                          ? '참가 시점을 기준으로 30일 이내에 인기작품 선정이 ${mission.targetCount ?? 1}회 늘면 1000코인을 받을 수 있습니다'
+                          ? '30일 동안 20번 인기작품에 선정되세요'
                           : '7일 동안 작품이 7번 인기작품으로 선정되세요',
                   style: const TextStyle(
                     fontSize: 16,
@@ -350,17 +415,15 @@ class _MissionScreenState extends State<MissionScreen> {
                           
                           debugPrint('✅ [MissionScreen] 사용자 확인: ${authService.user!.uid}');
                           
-                          // 좋아요 3개 누르기 미션: 참가비 50코인 사전 확인
-                          if (mission.type == 'like_click') {
+                          // 좋아요 3개 / 인기작품 선정되기 미션: 참가비 50코인 사전 확인
+                          if (mission.type == 'like_click' || mission.type == 'popular_once') {
                             final coins = authService.userData?['coins'];
                             final coinCount = coins is int ? coins : int.tryParse('$coins') ?? 0;
                             if (coinCount < 50) {
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('50코인이 필요합니다. 코인이 부족합니다.'),
-                                    backgroundColor: Colors.red,
-                                  ),
+                                await _showCoinShortageDialog(
+                                  context,
+                                  message: '미션에 참가하기에 50코인이 필요합니다',
                                 );
                               }
                               return;
@@ -391,16 +454,19 @@ class _MissionScreenState extends State<MissionScreen> {
                             } else {
                               debugPrint('❌ [MissionScreen] 미션 시작 실패 (success=false)');
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      mission.type == 'like_click'
-                                          ? '50코인이 부족하여 미션에 참가할 수 없습니다.'
-                                          : '미션 시작에 실패했습니다.',
+                                if (mission.type == 'like_click' || mission.type == 'popular_once') {
+                                  await _showCoinShortageDialog(
+                                    context,
+                                    message: '50코인이 부족하여 미션에 참가할 수 없습니다',
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('미션 시작에 실패했습니다.'),
+                                      backgroundColor: Colors.red,
                                     ),
-                                    backgroundColor: Colors.red,
-                                  ),
-                                );
+                                  );
+                                }
                               }
                             }
                           } catch (e, stackTrace) {
@@ -425,8 +491,8 @@ class _MissionScreenState extends State<MissionScreen> {
                         elevation: 4,
                         shadowColor: Colors.black.withOpacity(0.3),
                       ),
-                      child: mission.type == 'like_click'
-                          ? Row( // 좋아요 3개: 참가비 50코인 표시
+                      child: (mission.type == 'like_click' || mission.type == 'popular_once')
+                          ? Row( // 참가비 50 + 코인 아이콘만 (노란 배지 없음)
                               mainAxisSize: MainAxisSize.min,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -438,47 +504,42 @@ class _MissionScreenState extends State<MissionScreen> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
+                                const Text(
+                                  '50',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  width: 24,
+                                  height: 24,
                                   decoration: BoxDecoration(
                                     gradient: const LinearGradient(
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                       colors: [Color(0xFFF6D365), Color(0xFFFDA085)],
                                     ),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        '50',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Container(
-                                        width: 20,
-                                        height: 20,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withOpacity(0.15),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Center(
-                                          child: Text(
-                                            'C',
-                                            style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
                                       ),
                                     ],
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      'C',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -510,7 +571,7 @@ class _MissionScreenState extends State<MissionScreen> {
                             ),
                           ),
                           Text(
-                            '$progress / ${mission.targetCount ?? (mission.type == 'popular_once' ? 1 : 3)}',
+                            '$progress / ${mission.targetCount ?? (mission.type == 'popular_once' ? 20 : 3)}',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -523,7 +584,7 @@ class _MissionScreenState extends State<MissionScreen> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
-                          value: (progress / (mission.targetCount ?? (mission.type == 'popular_once' ? 1 : 3)).toDouble()).clamp(0.0, 1.0),
+                          value: (progress / (mission.targetCount ?? (mission.type == 'popular_once' ? 20 : 3)).toDouble()).clamp(0.0, 1.0),
                           backgroundColor: Colors.grey[200],
                           valueColor: const AlwaysStoppedAnimation<Color>(
                             AppTheme.primaryColor,
@@ -532,13 +593,13 @@ class _MissionScreenState extends State<MissionScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      // 기한 카운트다운: like_click 7일, popular_once 30일
+                      // 기한 카운트다운: like_click 30일, popular_once 30일
                       if (startTime != null && (mission.type == 'like_click' || mission.type == 'popular_once'))
                         StreamBuilder<DateTime>(
                           stream: Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
                           builder: (context, snapshot) {
                             final now = snapshot.data ?? DateTime.now();
-                            final daysLimit = mission.type == 'popular_once' ? 30 : 7;
+                            const daysLimit = 30; // like_click, popular_once 모두 30일
                             final endTime = startTime!.add(Duration(days: daysLimit));
                             final remaining = endTime.difference(now);
                             
@@ -697,7 +758,7 @@ class _MissionScreenState extends State<MissionScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '고정 미션',
+                            '미션',
                             style: TextStyle(
                               fontSize: 20.8, // 1.3rem ≈ 20.8px
                               fontWeight: FontWeight.w700,
@@ -736,16 +797,6 @@ class _MissionScreenState extends State<MissionScreen> {
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  _OfferwallCampaignCard(
-                                    rewardCoins: _offerwallRewardCoins,
-                                    onTap: () {
-                                      if (authService.user?.uid == null) return;
-                                      AdPopcornReward.setUserId(authService.user!.uid);
-                                      AdPopcornReward.setStyle('코인 충전소', '#667eea');
-                                      AdPopcornReward.openOfferwall();
-                                    },
-                                    isLoggedIn: authService.user != null,
-                                  ),
                                   if (availableMissions.isEmpty)
                                     Padding(
                                       padding: const EdgeInsets.all(48),
@@ -762,7 +813,7 @@ class _MissionScreenState extends State<MissionScreen> {
                               final userMission = dataService.userMissions[mission.id];
                               final isCompleted = userMission?.completed ?? false;
                               final progress = userMission?.progress ?? 0;
-                              final targetCount = mission.targetCount ?? 1;
+                              final targetCount = mission.targetCount ?? (mission.type == 'popular_once' ? 20 : 1);
                               // 미션을 시작했는지 확인 (startTime이 있어야 진행도 표시)
                               final hasStarted = userMission?.startTime != null;
                               final progressPercent = (progress / targetCount).clamp(0.0, 1.0);
@@ -832,6 +883,17 @@ class _MissionScreenState extends State<MissionScreen> {
                                         : null,
                               );
                                     }).toList(),
+                                  // 캠페인 참여하기: 인기작품 선정되기 아래(미션 중 가장 아래)에 위치
+                                  _OfferwallCampaignCard(
+                                    rewardCoins: _offerwallRewardCoins,
+                                    onTap: () {
+                                      if (authService.user?.uid == null) return;
+                                      AdPopcornReward.setUserId(authService.user!.uid);
+                                      AdPopcornReward.setStyle('코인 충전소', '#667eea');
+                                      AdPopcornReward.openOfferwall();
+                                    },
+                                    isLoggedIn: authService.user != null,
+                                  ),
                                 ],
                               );
                             },
@@ -1046,7 +1108,7 @@ class _MissionCard extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(left: 20), // 제목만 왼쪽 패딩
                         child: Text(
-                          mission.title,
+                          mission.type == 'popular_once' ? '인기작품 선정되기' : mission.title,
                           style: const TextStyle(
                             fontSize: 16, // 1rem
                             fontWeight: FontWeight.w600,

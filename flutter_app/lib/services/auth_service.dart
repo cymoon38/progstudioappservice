@@ -1,6 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -88,21 +91,31 @@ class AuthService extends ChangeNotifier {
     try {
       _isLoading = true;
       notifyListeners();
-      
+
+      final canSignUp = await canSignUpFromDevice();
+      if (!canSignUp) {
+        throw Exception('한 기기에서는 최대 2개의 계정만 만들 수 있습니다. (탈퇴한 계정 포함)');
+      }
+
+      final deviceId = await getDeviceId();
+
       final credential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-      
+
       await credential.user!.updateProfile(displayName: name);
-      
-      // Firestore에 사용자 정보 저장
+
+      // Firestore에 사용자 정보 저장 (기기 ID 기록 → 탈퇴 시 해당 기기 count 감소용)
       await _firestore.collection('users').doc(credential.user!.uid).set({
         'name': name,
         'email': email,
         'createdAt': FieldValue.serverTimestamp(),
         'coins': 0,
+        'createdFromDeviceId': deviceId,
       });
+
+      await _registerDeviceSignup(deviceId);
       
       // 새 유저의 기본 미션 초기화 (first_upload, like_click)
       try {
@@ -133,15 +146,95 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// 탈퇴: Firestore users 문서 삭제, 해당 기기 가입 수 감소 후 로그아웃. 게시물·댓글·대댓글은 삭제하지 않음.
+  Future<void> withdrawAccount() async {
+    if (_user == null) return;
+    final uid = _user!.uid;
+    try {
+      final userDoc = await _firestore.collection('users').doc(uid).get();
+      final deviceId = userDoc.data()?['createdFromDeviceId'] as String?;
+
+      await _firestore.collection('users').doc(uid).delete();
+
+      if (deviceId != null && deviceId.isNotEmpty) {
+        await _decrementDeviceSignupCount(deviceId);
+      }
+
+      await _auth.signOut();
+      _userData = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('탈퇴(회원정보 삭제) 오류: $e');
+      rethrow;
+    }
+  }
+
   Future<void> checkUsernameExists(String username) async {
     final snapshot = await _firestore
         .collection('users')
         .where('name', isEqualTo: username)
         .limit(1)
         .get();
-    
+
     if (snapshot.docs.isNotEmpty) {
       throw Exception('이미 사용 중인 닉네임입니다.');
+    }
+  }
+
+  static const String _deviceIdKey = 'device_id';
+  static const int _maxAccountsPerDevice = 2;
+
+  /// 기기당 고유 ID (앱 설치 시 한 번 생성 후 유지)
+  Future<String> getDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? id = prefs.getString(_deviceIdKey);
+    if (id == null || id.isEmpty) {
+      id = 'dev_${DateTime.now().millisecondsSinceEpoch}_${Random().nextDouble()}';
+      await prefs.setString(_deviceIdKey, id);
+    }
+    return id;
+  }
+
+  /// 기기당 회원가입 가능 여부 (탈퇴 포함 최대 2개까지, 2개 모두 탈퇴 시 다시 2개 가능)
+  Future<bool> canSignUpFromDevice() async {
+    final deviceId = await getDeviceId();
+    final doc = await _firestore.collection('deviceRegistrations').doc(deviceId).get();
+    final count = (doc.data()?['count'] is int)
+        ? (doc.data()!['count'] as int)
+        : ((doc.data()?['count'] as num?)?.toInt() ?? 0);
+    return count < _maxAccountsPerDevice;
+  }
+
+  /// 회원가입 시 기기 등록 (count 증가). signUp 성공 후에만 호출.
+  Future<void> _registerDeviceSignup(String deviceId) async {
+    final ref = _firestore.collection('deviceRegistrations').doc(deviceId);
+    await ref.set({'count': FieldValue.increment(1)}, SetOptions(merge: true));
+  }
+
+  /// 탈퇴 시 기기 count 감소 (2개 모두 탈퇴한 기기는 다시 2개 가입 가능)
+  Future<void> _decrementDeviceSignupCount(String deviceId) async {
+    if (deviceId.isEmpty) return;
+    final ref = _firestore.collection('deviceRegistrations').doc(deviceId);
+    final doc = await ref.get();
+    if (!doc.exists) return;
+    final data = doc.data();
+    final count = (data?['count'] is int)
+        ? (data!['count'] as int)
+        : ((data?['count'] as num?)?.toInt() ?? 0);
+    if (count <= 0) return;
+    await ref.set({'count': FieldValue.increment(-1)}, SetOptions(merge: true));
+  }
+
+  /// 이메일 중복 확인 (회원가입 전 호출)
+  Future<void> checkEmailExists(String email) async {
+    final snapshot = await _firestore
+        .collection('users')
+        .where('email', isEqualTo: email.trim())
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isNotEmpty) {
+      throw Exception('이미 사용 중인 이메일입니다.');
     }
   }
 

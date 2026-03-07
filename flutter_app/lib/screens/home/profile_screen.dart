@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
-import '../auth/login_screen.dart';
+import '../auth/welcome_screen.dart';
 import '../../widgets/app_profile_icon.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -37,7 +37,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        MaterialPageRoute(builder: (_) => const WelcomeScreen()),
                       );
                     },
                     child: const Text('로그인'),
@@ -134,8 +134,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onTap: () async {
                     await authService.signOut();
                     if (!mounted) return;
-                    Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                      (route) => false,
                     );
                   },
                 ),

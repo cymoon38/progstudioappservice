@@ -23,7 +23,13 @@ import 'services/offerwall_reward_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // 세로 모드만 허용 (가로 모드 비활성화)
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   // Firebase 초기화 (플랫폼별 설정 사용)
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -116,7 +122,7 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(create: (_) => ViewedPostsService()),
       ],
       child: MaterialApp(
-        title: '그림 커뮤니티',
+        title: '캔버스 캐시',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         home: const SplashScreen(),

@@ -111,6 +111,13 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     
+    // 기기별 회원가입 수 (한 기기당 최대 2개, 탈퇴 시 감소하여 다시 2개 가능)
+    match /deviceRegistrations/{deviceId} {
+      allow read: if true;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
     // 미션 (missions)
     match /missions/{missionId} {
       // 읽기는 모든 사용자 허용

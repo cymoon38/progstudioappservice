@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
@@ -97,7 +98,7 @@ class _CoinModalState extends State<CoinModal> {
 
     final coins = auth.userData?['coins'] ?? 0;
     final coinsInt = coins is int ? coins : int.tryParse('$coins') ?? 0;
-    final coinsFormatted = formatCoinsInMan(coinsInt);
+    final coinsFormatted = NumberFormat('#,###').format(coinsInt);
 
     return Dialog(
       backgroundColor: Colors.black.withOpacity(0.7), // CSS: rgba(0, 0, 0, 0.7)

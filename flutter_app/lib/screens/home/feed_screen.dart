@@ -1,9 +1,7 @@
 import 'dart:async';
 
 import 'package:adpopcornreward/adpopcornreward.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -79,28 +77,6 @@ class _FeedScreenState extends State<FeedScreen> {
         onSelect: onSelect,
         successMessage: successMessage,
       ),
-    );
-  }
-
-  /// 디버그 전용: 실제 아이템 사용 없이 채택 모달 UI 테스트 (kDebugMode에서만 노출)
-  void _showAdoptionModalTest(BuildContext context) {
-    const mockAdoptable = [
-      {'author': '테스트유저1', 'text': '첫 번째 댓글 내용입니다.', 'commentId': 'mock1', 'commentIndex': 0, 'replyPath': null},
-      {'author': '테스트유저2', 'text': '두 번째 댓글 미리보기 텍스트입니다.', 'commentId': 'mock2', 'commentIndex': 1, 'replyPath': null},
-      {'author': '테스트유저3', 'text': '세 번째 댓글을 선택한 뒤 확인 버튼을 누르면 채택됩니다.ㅇㄴㅁㄹㅇㅁ놂ㅇㄴ렁널;ㅁㄴ얼;ㅣㅓㅇㄴ;ㅣ러;민어링너;미러;ㅣㅇ넘ㄹ;ㅣㅓㅇㄴ;ㅣㅓㄹ;이널;ㅣㅓㅇㄹ;ㅣㅁ넝리ㅓㅇ니ㅏㅏ', 'commentId': 'mock3', 'commentIndex': 2, 'replyPath': null},
-      {'author': '테스트유저4', 'text': '네 번째 댓글입니다. 스크롤 테스트용.', 'commentId': 'mock4', 'commentIndex': 3, 'replyPath': null},
-      {'author': '테스트유저5', 'text': '다섯 번째 댓글입니다.', 'commentId': 'mock5', 'commentIndex': 4, 'replyPath': null},
-      {'author': '테스트유저6', 'text': '여섯 번째 댓글까지 스크롤할 수 있습니다.', 'commentId': 'mock6', 'commentIndex': 5, 'replyPath': null},
-    ];
-    _showAdoptionModal(
-      context,
-      coinAmount: 50,
-      postTitle: '[테스트] 채택 모달 확인',
-      adoptable: mockAdoptable,
-      onSelect: (_) async {
-        await Future.delayed(const Duration(milliseconds: 100));
-      },
-      successMessage: '테스트: 댓글을 50코인으로 채택했습니다.',
     );
   }
 
@@ -247,36 +223,9 @@ class _FeedScreenState extends State<FeedScreen> {
                       parent: ClampingScrollPhysics(),
                     ),
                     slivers: [
+                      SliverToBoxAdapter(child: _CanvasCacheIntroSection()),
                       SliverToBoxAdapter(child: _FeatureIconsSection()),
                       SliverToBoxAdapter(child: _MissionPreviewSection()),
-                      if (kDebugMode)
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: GestureDetector(
-                              onTap: () => _showAdoptionModalTest(context),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.orange.withOpacity(0.4)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.bug_report, size: 16, color: Colors.orange.shade700),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '채택 모달 테스트',
-                                      style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
                       if (dataService.isLoading)
                         const SliverFillRemaining(
                           child: Center(child: CircularProgressIndicator()),
@@ -730,6 +679,113 @@ class _AdoptionCommentTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// 캔버스 캐시 소개 박스 (홈 상단, 기존 네이티브 광고 자리)
+class _CanvasCacheIntroSection extends StatelessWidget {
+  static double _heightForWidth(double width) => width * 627 / 1200;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double horizontalMargin = 16;
+        final contentMaxWidth = constraints.maxWidth;
+        final boxWidth = (contentMaxWidth - horizontalMargin * 2).clamp(0.0, double.infinity);
+        final boxHeight = _heightForWidth(boxWidth);
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          width: boxWidth,
+          height: boxHeight,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: _CanvasCacheIntroBox(width: boxWidth, height: boxHeight),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 캔버스 캐시 소개 박스
+class _CanvasCacheIntroBox extends StatelessWidget {
+  const _CanvasCacheIntroBox({required this.width, required this.height});
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppTheme.primaryColor,
+            AppTheme.secondaryColor,
+          ],
+        ),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.25),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: width * 0.06,
+          vertical: height * 0.12,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'CANVAS CASH',
+              style: TextStyle(
+                fontSize: width * 0.072,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+                height: 1.15,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withOpacity(0.2),
+                    offset: const Offset(0, 1),
+                    blurRadius: 2,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: height * 0.04),
+            Text(
+              '그림을 공유하고 코인을 획득하세요',
+              style: TextStyle(
+                fontSize: width * 0.038,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.2,
+                height: 1.45,
+                color: Colors.white.withOpacity(0.9),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

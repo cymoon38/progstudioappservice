@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
 import 'package:adpopcornssp_flutter/adpopcornssp_flutter.dart';
-import '../services/auth_service.dart';
-import 'auth/login_screen.dart';
+import 'auth/welcome_screen.dart';
 import 'home/home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -21,27 +19,28 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkAuthState() async {
-    // Firebase Auth 복원이 끝날 때까지 대기 (uid_token이 SSP 요청에 들어가도록)
-    await Future.delayed(const Duration(milliseconds: 800));
-    final User? firebaseUser = await FirebaseAuth.instance.authStateChanges().first
-        .timeout(const Duration(seconds: 3), onTimeout: () => null);
-    if (firebaseUser?.uid != null && firebaseUser!.uid.isNotEmpty) {
-      await AdPopcornSSP.setUserId(firebaseUser.uid);
+    // Firebase Auth 영속 복원 대기 (자동 로그인: 마지막 로그인 계정 복원)
+    await Future.delayed(const Duration(milliseconds: 500));
+    // authStateChanges().first = 복원된 첫 상태 (로그인 유지 시 user, 비로그인 시 null)
+    User? firebaseUser = await FirebaseAuth.instance.authStateChanges().first
+        .timeout(const Duration(seconds: 4), onTimeout: () => null);
+    // 일부 환경에서 첫 emission이 null일 수 있어, 한 번 더 currentUser 확인
+    if (firebaseUser == null) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      firebaseUser = FirebaseAuth.instance.currentUser;
     }
 
     if (!mounted) return;
 
-    final authService = Provider.of<AuthService>(context, listen: false);
-    if (authService.user?.uid != null && authService.user!.uid.isNotEmpty) {
-      await AdPopcornSSP.setUserId(authService.user!.uid);
-    }
-    if (authService.isLoggedIn) {
+    if (firebaseUser?.uid != null && firebaseUser!.uid.isNotEmpty) {
+      await AdPopcornSSP.setUserId(firebaseUser.uid);
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } else {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(builder: (_) => const WelcomeScreen()),
       );
     }
   }
@@ -49,26 +48,17 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF667eea),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.palette,
-              size: 100,
-              color: Colors.blue,
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              '그림 커뮤니티',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 40),
-            const CircularProgressIndicator(),
-          ],
+        child: Image.asset(
+          'assets/icons/loding_logo.png',
+          height: 100,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Icon(
+            Icons.palette,
+            size: 100,
+            color: Colors.white,
+          ),
         ),
       ),
     );

@@ -3005,20 +3005,20 @@ class DataService extends ChangeNotifier {
         'isRepeatable': false,
       },
       {
-        'title': '좋아요 3개 누르기',
-        'description': '다른 작품에 좋아요를 3개 누르면 코인을 받을 수 있습니다',
+        'title': '좋아요 200개 누르기',
+        'description': '30일 동안 다른 작품에 좋아요를 200개 누르면 코인을 받을 수 있습니다',
         'reward': 300,
         'type': 'like_click',
         'isRepeatable': true,
-        'targetCount': 3,
+        'targetCount': 200,
       },
       {
-        'title': '인기작품 한 번 선정 되기',
-        'description': '미션 참가 후 30일 이내에 인기작품 선정 횟수가 목표만큼 늘면 1000코인을 받을 수 있습니다 (테스트용 1회, 추후 10회 등으로 변경 가능)',
+        'title': '인기작품 선정되기',
+        'description': '30일 동안 20번 인기작품에 선정되세요',
         'reward': 1000,
         'type': 'popular_once',
         'isRepeatable': true,
-        'targetCount': 1,
+        'targetCount': 20,
       },
     ];
 
@@ -3044,6 +3044,8 @@ class DataService extends ChangeNotifier {
   // 사용자의 미션 완료 상태 가져오기
   Future<void> getUserMissions(String userId) async {
     try {
+      if (_missions.isEmpty) await getMissions();
+
       final snapshot = await _firestore
           .collection('userMissions')
           .where('userId', isEqualTo: userId)
@@ -3092,6 +3094,40 @@ class DataService extends ChangeNotifier {
         }
       }
 
+      // 기간 만료된 미완료 미션은 알림 없이 진행 상황만 초기화 (다시 참가 가능하도록)
+      final now = DateTime.now();
+      final toRemove = <String>[];
+      for (final entry in result.entries) {
+        final um = entry.value;
+        if (um.completed || um.startTime == null) continue;
+        final missionList = _missions.where((m) => m.id == um.missionId).toList();
+        if (missionList.isEmpty) continue;
+        final mission = missionList.first;
+        if (mission.type != 'like_click' && mission.type != 'popular_once') continue;
+        final daysLimit = mission.type == 'popular_once' ? popularOnceMissionDays : likeClickMissionDays;
+        final endTime = um.startTime!.add(Duration(days: daysLimit));
+        if (now.isBefore(endTime)) continue;
+        try {
+          final ref = _firestore.collection('userMissions').doc(um.id);
+          final updateData = <String, dynamic>{
+            'progress': 0,
+            'startTime': FieldValue.delete(),
+          };
+          if (mission.type == 'like_click') {
+            updateData['likedPostIds'] = <String>[];
+          } else {
+            updateData['popularCountAtStart'] = FieldValue.delete();
+          }
+          await ref.update(updateData);
+          toRemove.add(entry.key);
+        } catch (e) {
+          debugPrint('만료 미션 초기화 오류 (무시): ${um.missionId} - $e');
+        }
+      }
+      for (final key in toRemove) {
+        result.remove(key);
+      }
+
       _userMissions = result;
 
       // 디버그: Firestore에서 불러온 미션 진행도 로그
@@ -3115,8 +3151,10 @@ class DataService extends ChangeNotifier {
         .where('userId', isEqualTo: userId)
         .snapshots()
         .listen(
-      (snapshot) {
+      (snapshot) async {
       try {
+        if (_missions.isEmpty) await getMissions();
+
         final Map<String, UserMission> result = {};
         for (final doc in snapshot.docs) {
           final data = doc.data();
@@ -3146,6 +3184,40 @@ class DataService extends ChangeNotifier {
           if (newStart.isAfter(existingStart)) {
             result[missionId] = newMission;
           }
+        }
+
+        // 기간 만료된 미완료 미션은 알림 없이 진행 상황만 초기화
+        final now = DateTime.now();
+        final toRemove = <String>[];
+        for (final entry in result.entries) {
+          final um = entry.value;
+          if (um.completed || um.startTime == null) continue;
+          final missionList = _missions.where((m) => m.id == um.missionId).toList();
+          if (missionList.isEmpty) continue;
+          final mission = missionList.first;
+          if (mission.type != 'like_click' && mission.type != 'popular_once') continue;
+          final daysLimit = mission.type == 'popular_once' ? popularOnceMissionDays : likeClickMissionDays;
+          final endTime = um.startTime!.add(Duration(days: daysLimit));
+          if (now.isBefore(endTime)) continue;
+          try {
+            final ref = _firestore.collection('userMissions').doc(um.id);
+            final updateData = <String, dynamic>{
+              'progress': 0,
+              'startTime': FieldValue.delete(),
+            };
+            if (mission.type == 'like_click') {
+              updateData['likedPostIds'] = <String>[];
+            } else {
+              updateData['popularCountAtStart'] = FieldValue.delete();
+            }
+            await ref.update(updateData);
+            toRemove.add(entry.key);
+          } catch (e) {
+            debugPrint('만료 미션 초기화 오류 (무시): ${um.missionId} - $e');
+          }
+        }
+        for (final key in toRemove) {
+          result.remove(key);
         }
 
         _userMissions = result;
@@ -3209,20 +3281,20 @@ class DataService extends ChangeNotifier {
         }
       }
 
-      // 좋아요 3개 누르기 미션: 참가 시 50코인 차감
-      const int likeClickEntryFee = 50;
-      if (mission.type == 'like_click') {
+      // 좋아요 3개 / 인기작품 선정되기 미션: 참가 시 50코인 차감
+      const int missionEntryFee = 50;
+      if (mission.type == 'like_click' || mission.type == 'popular_once') {
         final userRef = _firestore.collection('users').doc(userId);
         final userDoc = await userRef.get();
         if (!userDoc.exists) return false;
         final userData = userDoc.data() ?? {};
         final currentCoins = (userData['coins'] ?? 0) is int ? (userData['coins'] ?? 0) as int : int.tryParse('${userData['coins']}') ?? 0;
-        if (currentCoins < likeClickEntryFee) {
-          debugPrint('❌ [startMission] 코인 부족: 보유 $currentCoins, 필요 $likeClickEntryFee');
+        if (currentCoins < missionEntryFee) {
+          debugPrint('❌ [startMission] 코인 부족: 보유 $currentCoins, 필요 $missionEntryFee');
           return false;
         }
-        await addCoins(userId: userId, amount: -likeClickEntryFee, type: 'mission_참가');
-        debugPrint('✅ [startMission] 좋아요 3개 미션 참가비 50코인 차감 완료');
+        await addCoins(userId: userId, amount: -missionEntryFee, type: 'mission_참가');
+        debugPrint('✅ [startMission] 미션 참가비 50코인 차감 완료 (${mission.type})');
       }
 
       // 인기작품 한 번 선정 되기: 참가 시점의 인기작품 선정 수를 기준으로 저장
@@ -3557,10 +3629,12 @@ class DataService extends ChangeNotifier {
   Future<int> getUserPopularPostCount(String userId) async {
     if (userId.isEmpty) return 0;
     try {
+      // 인기작품 선정 직후 진행도 반영을 위해 서버에서 최신 데이터 조회 (캐시 미사용)
+      const source = Source.server;
       final snapshot = await _firestore
           .collection('posts')
           .where('authorUid', isEqualTo: userId)
-          .get();
+          .get(const GetOptions(source: source));
       return snapshot.docs.where((d) => d.data()['isPopular'] == true).length;
     } catch (e) {
       debugPrint('인기작품 수 조회 오류: $e');
@@ -3668,6 +3742,7 @@ class DataService extends ChangeNotifier {
   /// 인기작품 선정 시 작성자의 '인기작품 한 번 선정 되기' 미션 진행도 갱신 및 완료 처리.
   /// 참가 시점(popularCountAtStart) 대비 선정 수가 targetCount만큼 늘면 완료. 기한 30일.
   static const int popularOnceMissionDays = 30;
+  static const int likeClickMissionDays = 30;
 
   Future<void> _checkAndCompletePopularOnceMission(String authorUid) async {
     if (authorUid.isEmpty) return;
@@ -3689,11 +3764,19 @@ class DataService extends ChangeNotifier {
 
         final baseline = (data['popularCountAtStart'] is int) ? data['popularCountAtStart'] as int : 0;
         final progress = (currentCount - baseline).clamp(0, 999);
-        final targetCount = mission.targetCount ?? 1;
+        // 완료 판단은 Firestore missions 문서의 targetCount 사용 (캐시된 mission.targetCount가 낡을 수 있음)
+        final missionSnap = await _firestore.collection('missions').doc(mission.id).get();
+        final missionData = missionSnap.data() as Map<String, dynamic>?;
+        final targetCount = missionData != null && missionData['targetCount'] != null
+            ? (missionData['targetCount'] is int ? missionData['targetCount'] as int : (missionData['targetCount'] as num).toInt())
+            : (mission.targetCount ?? 1);
         final endTime = startTime.add(const Duration(days: popularOnceMissionDays));
         final withinDeadline = DateTime.now().isBefore(endTime);
 
         await docRef.update({'progress': progress});
+        // 진행도만 올린 경우에도 UI 갱신을 위해 userMissions 새로고침 (targetCount > 1일 때 진행도가 올라가도록)
+        await getUserMissions(authorUid);
+        notifyListeners();
 
         if (withinDeadline && progress >= targetCount) {
           final success = await completeMission(
