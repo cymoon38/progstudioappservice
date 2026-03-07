@@ -42,7 +42,9 @@ dependencies:
   
   # 수익화
   adpopcornreward: ^1.0.5
-  adpopcornssp_flutter: ^1.0.16
+  # 로컬 패치: 네이티브 뷰가 Flutter가 준 크기를 채우도록 수정 (큰 화면에서 광고도 같이 커지게)
+  adpopcornssp_flutter:
+    path: packages/adpopcornssp_flutter
   # google_mobile_ads: ^3.1.0
   # in_app_purchase: ^3.1.11
 

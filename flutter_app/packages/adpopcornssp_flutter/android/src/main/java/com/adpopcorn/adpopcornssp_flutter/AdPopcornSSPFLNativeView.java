@@ -1,0 +1,112 @@
+package com.adpopcorn.adpopcornssp_flutter;
+
+import android.app.Activity;
+import android.content.Context;
+import android.util.TypedValue;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import com.igaworks.ssp.SSPErrorCode;
+import com.igaworks.ssp.part.custom.AdPopcornSSPReactNativeAd;
+import com.igaworks.ssp.part.custom.listener.IReactNativeAdEventCallbackListener;
+
+import io.flutter.plugin.common.BinaryMessenger;
+import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.platform.PlatformView;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class AdPopcornSSPFLNativeView implements PlatformView, IReactNativeAdEventCallbackListener {
+    private FrameLayout container;
+    private AdPopcornSSPReactNativeAd nativeView;
+    private MethodChannel channel;
+    private String placementId;
+    private int width = 0;
+    private int height = 0;
+    AdPopcornSSPFLNativeView(Activity activity, @NonNull Context context, int id, @Nullable Map<String, Object> creationParams, BinaryMessenger binaryMessenger) {
+        if(creationParams != null)
+        {
+            placementId = (String)creationParams.get("placementId");
+            if(creationParams.containsKey("width"))
+                width = DpToPxInt(context, (int)creationParams.get("width"));
+            if(creationParams.containsKey("height"))
+                height = DpToPxInt(context, (int)creationParams.get("height"));
+        }
+        if(placementId == null)
+            return;
+
+        channel = new MethodChannel(binaryMessenger, "adpopcornssp/" + placementId);
+        nativeView = new AdPopcornSSPReactNativeAd(activity);
+        if(width > 0)
+            nativeView.setReactNativeWidth(width);
+        if(height > 0)
+            nativeView.setReactNativeHeight(height);
+        nativeView.setReactNativeAdEventCallbackListener(this);
+        nativeView.setPlacementId(placementId);
+        nativeView.loadAd();
+
+        // Flutter가 주는 크기를 채우도록 래퍼 사용. 그렇지 않으면 큰 화면에서 여백만 넓어지고 광고는 고정 크기로 남음.
+        container = new FrameLayout(context);
+        container.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        nativeView.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        container.addView(nativeView);
+    }
+
+    @NonNull
+    @Override
+    public View getView() {
+        return container != null ? container : nativeView;
+    }
+
+    @Override
+    public void dispose() {
+        if(channel != null) {
+            channel.setMethodCallHandler(null);
+            channel = null;
+        }
+    }
+
+    @Override
+    public void onReactNativeAdLoadSuccess(int adNetworkNo, int width, int height) {
+        if(channel != null){
+            channel.invokeMethod("APSSPNativeAdLoadSuccess", argumentsMap("placementId", placementId));
+        }
+    }
+
+    @Override
+    public void onReactNativeAdLoadFailed(SSPErrorCode sspErrorCode) {
+        if(channel != null) {
+            channel.invokeMethod("APSSPNativeAdLoadFail", argumentsMap("placementId", placementId, "errorCode", sspErrorCode.getErrorCode()));
+        }
+    }
+
+    @Override
+    public void onImpression() {
+        if(channel != null){
+            channel.invokeMethod("APSSPNativeAdImpression", argumentsMap("placementId", placementId));
+        }
+    }
+
+    @Override
+    public void onClicked() {
+        if(channel != null){
+            channel.invokeMethod("APSSPNativeAdClicked", argumentsMap("placementId", placementId));
+        }
+    }
+
+    private Map<String, Object> argumentsMap(Object... args) {
+        Map<String, Object> arguments = new HashMap<>();
+        try{
+            for (int i = 0; i < args.length; i += 2) arguments.put(args[i].toString(), args[i + 1]);
+        }catch (Exception e){}
+        return arguments;
+    }
+
+    private int DpToPxInt(Context context, int dp) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, context.getResources().getDisplayMetrics());
+    }
+}

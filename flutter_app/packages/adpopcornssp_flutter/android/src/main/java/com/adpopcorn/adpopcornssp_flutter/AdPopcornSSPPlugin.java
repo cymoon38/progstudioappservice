@@ -1,0 +1,813 @@
+package com.adpopcorn.adpopcornssp_flutter;
+
+import android.app.Activity;
+import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.TextUtils;
+import androidx.annotation.NonNull;
+
+import com.igaworks.ssp.AdPopcornSSP;
+import com.igaworks.ssp.SSPErrorCode;
+import com.igaworks.ssp.SdkInitListener;
+import com.igaworks.ssp.common.model.RewardAdPlusPlacementStatusModel;
+import com.igaworks.ssp.part.contents.AdPopcornSSPContentsAd;
+import com.igaworks.ssp.part.contents.listener.IContentsAdEventCallbackListener;
+import com.igaworks.ssp.part.hybrid.AdPopcornSSPJsBridge;
+import com.igaworks.ssp.part.hybrid.HybridEventCallbackListener;
+import com.igaworks.ssp.part.interstitial.AdPopcornSSPInterstitialAd;
+import com.igaworks.ssp.part.interstitial.listener.IInterstitialEventCallbackListener;
+import com.igaworks.ssp.part.mix.AdPopcornSSPVideoMixAd;
+import com.igaworks.ssp.part.mix.listener.IVideoMixAdEventCallbackListener;
+import com.igaworks.ssp.part.popcontents.AdPopcornSSPPopContentsAd;
+import com.igaworks.ssp.part.popcontents.listener.IPopContentsAdEventCallbackListener;
+import com.igaworks.ssp.part.video.AdPopcornSSPInterstitialVideoAd;
+import com.igaworks.ssp.part.video.AdPopcornSSPRewardVideoAd;
+import com.igaworks.ssp.part.video.listener.IInterstitialVideoAdEventCallbackListener;
+import com.igaworks.ssp.part.video.listener.IRewardPlusSettingEventCallbackListener;
+import com.igaworks.ssp.part.video.listener.IRewardVideoAdEventCallbackListener;
+import com.igaworks.ssp.rewardplus.AdPopcornSSPRewardAdPlus;
+import com.igaworks.ssp.rewardplus.listener.IRewardAdEventCallbackListener;
+import com.igaworks.ssp.rewardplus.listener.IRewardAdPlusUserStatusCallbackListener;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import io.flutter.embedding.engine.plugins.FlutterPlugin;
+import io.flutter.embedding.engine.plugins.activity.ActivityAware;
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
+import io.flutter.plugin.common.BinaryMessenger;
+import io.flutter.plugin.common.MethodCall;
+import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
+import io.flutter.plugin.common.MethodChannel.Result;
+
+/** AdPopcornSSPPlugin */
+public class AdPopcornSSPPlugin implements FlutterPlugin, ActivityAware, MethodCallHandler {
+  /// The MethodChannel that will the communication between Flutter and native Android
+  ///
+  /// This local reference serves to register the plugin with the Flutter Engine and unregister it
+  /// when the Flutter Engine is detached from the Activity
+  private MethodChannel channel;
+  private Context context, activityContext;
+  private FlutterPluginBinding flutterPluginBinding;
+  private Map<String, AdPopcornSSPInterstitialAd> interstitialAdMap = new HashMap<>();
+  private Map<String, AdPopcornSSPInterstitialVideoAd> interstitialVideoAdMap = new HashMap<>();
+  private Map<String, AdPopcornSSPRewardVideoAd> rewardVideoAdMap = new HashMap<>();
+  private Map<String, AdPopcornSSPContentsAd> contentsAdMap = new HashMap<>();
+  private Map<String, AdPopcornSSPPopContentsAd> popContentsAdMap = new HashMap<>();
+  private Map<String, AdPopcornSSPVideoMixAd> videoMixAdMap = new HashMap<>();
+
+  @Override
+    public void onAttachedToEngine(@NonNull FlutterPluginBinding flutterPluginBinding) {
+    this.flutterPluginBinding = flutterPluginBinding;
+    this.context = flutterPluginBinding.getApplicationContext();
+    setup(this, flutterPluginBinding.getBinaryMessenger());
+  }
+
+  @Override
+  public void onAttachedToActivity(ActivityPluginBinding binding)
+  {
+    flutterPluginBinding.getPlatformViewRegistry()
+            .registerViewFactory("AdPopcornSSPBannerView", new AdPopcornSSPFLBannerViewFactory(binding.getActivity(), flutterPluginBinding.getBinaryMessenger()));
+    flutterPluginBinding.getPlatformViewRegistry()
+            .registerViewFactory("AdPopcornSSPNativeView", new AdPopcornSSPFLNativeViewFactory(binding.getActivity(), flutterPluginBinding.getBinaryMessenger()));
+    activityContext = binding.getActivity();
+  }
+
+  @Override
+  public void onDetachedFromActivityForConfigChanges() {
+
+  }
+
+  @Override
+  public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding binding) {
+    activityContext = binding.getActivity();
+  }
+
+  @Override
+  public void onDetachedFromActivity() {
+  }
+
+  private static void setup(AdPopcornSSPPlugin plugin, BinaryMessenger binaryMessenger) {
+    plugin.channel = new MethodChannel(binaryMessenger, "adpopcornssp");
+    plugin.channel.setMethodCallHandler(plugin);
+  }
+
+  public AdPopcornSSPPlugin()
+  {
+    if(interstitialAdMap == null)
+      interstitialAdMap = new HashMap<>();
+    if(interstitialVideoAdMap == null)
+      interstitialVideoAdMap = new HashMap<>();
+    if(rewardVideoAdMap == null)
+      rewardVideoAdMap = new HashMap<>();
+    if(contentsAdMap == null)
+      contentsAdMap = new HashMap<>();
+    if(popContentsAdMap == null)
+      popContentsAdMap = new HashMap<>();
+    if(videoMixAdMap == null)
+      videoMixAdMap = new HashMap<>();
+  }
+
+  @Override
+  public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
+    try {
+      if (call.method.equals("init")) {
+        callInit(call, result);
+      } else if (call.method.equals("setUserId")) {
+        callUserId(call, result);
+      } else if (call.method.equals("setLogEnable")) {
+        callSetLogEnable(call, result);
+      } else if (call.method.equals("setUIDIdentifier")) {
+        callSetUIDIdentifier(call, result);
+      } else if (call.method.equals("tagForChildDirectedTreatment")) {
+        callTagForChildDirectedTreatment(call, result);
+      } else if (call.method.equals("loadInterstitial")) {
+        callLoadInterstitial(call, result);
+      } else if (call.method.equals("showInterstitial")) {
+        callShowInterstitial(call, result);
+      } else if (call.method.equals("loadInterstitialVideo")) {
+        callLoadInterstitialVideo(call, result);
+      } else if (call.method.equals("showInterstitialVideo")) {
+        callShowInterstitialVideo(call, result);
+      } else if (call.method.equals("loadRewardVideo")) {
+        callLoadRewardVideo(call, result);
+      } else if (call.method.equals("showRewardVideo")) {
+        callShowRewardVideo(call, result);
+      } else if (call.method.equals("loadVideoMix")) {
+        callLoadVideoMix(call, result);
+      } else if (call.method.equals("showVideoMix")) {
+        callShowVideoMix(call, result);
+      } else if (call.method.equals("openContents")) {
+        callOpenContents(call, result);
+      } else if (call.method.equals("openRewardPlusSetting")) {
+        callOpenRewardPlusSetting(call, result);
+      } else if (call.method.equals("getRewardPlusUserSetting")) {
+        callGetRewardPlusUserSetting(call, result);
+      } else if (call.method.equals("openPopContents")) {
+        callOpenPopContents(call, result);
+      } else if (call.method.equals("openRewardAdPlusPage")) {
+        callOpenRewardAdPlusPage(call, result);
+      } else if (call.method.equals("getRewardAdPlusUserMediaStatus")) {
+        callGetRewardAdPlusUserMediaStatus(call, result);
+      } else if (call.method.equals("getRewardAdPlusUserPlacementStatus")) {
+        callGetRewardAdPlusUserPlacementStatus(call, result);
+      } else if (call.method.equals("setRewardAdPlusEventListener")) {
+        callSetRewardAdPlusEventListener(call, result);
+      }  else {
+        result.notImplemented();
+      }
+    }catch (Exception e){}
+  }
+
+  private void callInit(@NonNull MethodCall call, @NonNull Result result)
+  {
+    AdPopcornSSP.init(context, new SdkInitListener() {
+      @Override
+      public void onInitializationFinished() {
+        try {
+          new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+              if (channel != null)
+                channel.invokeMethod("AdPopcornSSPSDKDidInitialize", argumentsMap());
+            }
+          });
+        }catch (Exception e){}
+      }
+    });
+  }
+
+  private void callUserId(@NonNull MethodCall call, @NonNull Result result)
+  {
+    final String userId = call.argument("userId");
+    if (TextUtils.isEmpty(userId)) {
+      result.error("no_user_id", "userId is null or empty", null);
+      return;
+    }
+    AdPopcornSSP.setUserId(context, userId);
+  }
+
+  private void callSetLogEnable(@NonNull MethodCall call, @NonNull Result result)
+  {
+    final boolean enable = call.argument("enable");
+    AdPopcornSSP.setLogEnable(enable);
+  }
+
+  private void callSetUIDIdentifier(@NonNull MethodCall call, @NonNull Result result)
+  {
+    String identityType = call.argument("identityType");
+    String identifier = call.argument("identifier");
+    if(identityType != null && identityType.equals("phone"))
+      AdPopcornSSP.setUIDIdentifier(context, 1, identifier);
+    else
+      AdPopcornSSP.setUIDIdentifier(context, 0, identifier);
+  }
+
+  private void callTagForChildDirectedTreatment(@NonNull MethodCall call, @NonNull Result result)
+  {
+    String tag = call.argument("tag");
+    if(tag != null && tag.equals("true"))
+      AdPopcornSSP.tagForChildDirectedTreatment(context, true);
+    else
+      AdPopcornSSP.tagForChildDirectedTreatment(context, false);
+  }
+
+  private void callLoadInterstitial(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try {
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPInterstitialAd interstitialAd;
+      if (interstitialAdMap.containsKey(placementId)) {
+        interstitialAd = interstitialAdMap.get(placementId);
+      } else {
+        if(activityContext != null)
+          interstitialAd = new AdPopcornSSPInterstitialAd(activityContext);
+        else
+          interstitialAd = new AdPopcornSSPInterstitialAd(context);
+        interstitialAdMap.put(placementId, interstitialAd);
+      }
+      interstitialAd.setPlacementId(placementId);
+      interstitialAd.setInterstitialEventCallbackListener(new IInterstitialEventCallbackListener() {
+        @Override
+        public void OnInterstitialLoaded() {
+          if (channel != null)
+            channel.invokeMethod("APSSPInterstitialAdLoadSuccess", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnInterstitialReceiveFailed(SSPErrorCode sspErrorCode) {
+          if (channel != null)
+            channel.invokeMethod("APSSPInterstitialAdLoadFail", argumentsMap("placementId", placementId, "errorCode", sspErrorCode.getErrorCode()));
+        }
+
+        @Override
+        public void OnInterstitialOpened() {
+          if (channel != null)
+            channel.invokeMethod("APSSPInterstitialAdShowSuccess", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnInterstitialOpenFailed(SSPErrorCode sspErrorCode) {
+          if (channel != null)
+            channel.invokeMethod("APSSPInterstitialAdShowFail", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnInterstitialClosed(int i) {
+          if (channel != null)
+            channel.invokeMethod("APSSPInterstitialAdClosed", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnInterstitialClicked() {
+          if (channel != null)
+            channel.invokeMethod("APSSPInterstitialAdClicked", argumentsMap("placementId", placementId));
+        }
+      });
+      interstitialAd.loadAd();
+    }catch (Exception e){}
+  }
+
+  private void callShowInterstitial(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPInterstitialAd interstitialAd;
+      if(interstitialAdMap.containsKey(placementId))
+      {
+        interstitialAd = interstitialAdMap.get(placementId);
+        if(activityContext != null && activityContext instanceof Activity)
+          interstitialAd.setCurrentActivity((Activity)activityContext);
+      }
+      else
+      {
+        if(activityContext != null)
+          interstitialAd = new AdPopcornSSPInterstitialAd(activityContext);
+        else
+          interstitialAd = new AdPopcornSSPInterstitialAd(context);
+      }
+      if(interstitialAd.isLoaded()) {
+        interstitialAd.showAd();
+      }
+      else {
+        if(channel != null)
+          channel.invokeMethod("APSSPInterstitialAdShowFail", argumentsMap("placementId", placementId));
+      }
+    }catch (Exception e){}
+  }
+
+  private void callLoadInterstitialVideo(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPInterstitialVideoAd interstitialVideoAd;
+      if(interstitialVideoAdMap.containsKey(placementId))
+      {
+        interstitialVideoAd = interstitialVideoAdMap.get(placementId);
+      }
+      else
+      {
+        if(activityContext != null)
+          interstitialVideoAd = new AdPopcornSSPInterstitialVideoAd(activityContext);
+        else
+          interstitialVideoAd = new AdPopcornSSPInterstitialVideoAd(context);
+        interstitialVideoAdMap.put(placementId, interstitialVideoAd);
+      }
+      interstitialVideoAd.setPlacementId(placementId);
+      interstitialVideoAd.setEventCallbackListener(new IInterstitialVideoAdEventCallbackListener() {
+        @Override
+        public void OnInterstitialVideoAdLoaded() {
+          if(channel != null)
+            channel.invokeMethod("APSSPInterstitialVideoAdLoadSuccess", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnInterstitialVideoAdLoadFailed(SSPErrorCode sspErrorCode) {
+          if(channel != null)
+            channel.invokeMethod("APSSPInterstitialVideoAdLoadFail", argumentsMap("placementId", placementId, "errorCode", sspErrorCode.getErrorCode()));
+        }
+
+        @Override
+        public void OnInterstitialVideoAdOpened() {
+          if(channel != null)
+            channel.invokeMethod("APSSPInterstitialVideoAdShowSuccess", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnInterstitialVideoAdOpenFalied() {
+          if(channel != null)
+            channel.invokeMethod("APSSPInterstitialVideoAdShowFail", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnInterstitialVideoAdClosed() {
+          if(channel != null)
+            channel.invokeMethod("APSSPInterstitialVideoAdClosed", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnInterstitialVideoAdClicked() {
+
+        }
+      });
+      interstitialVideoAd.loadAd();
+    }catch (Exception e){}
+  }
+
+  private void callShowInterstitialVideo(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPInterstitialVideoAd interstitialVideoAd;
+      if(interstitialVideoAdMap.containsKey(placementId))
+      {
+        interstitialVideoAd = interstitialVideoAdMap.get(placementId);
+        if(activityContext != null && activityContext instanceof Activity)
+          interstitialVideoAd.setCurrentActivity((Activity)activityContext);
+      }
+      else
+      {
+        if(activityContext != null)
+          interstitialVideoAd = new AdPopcornSSPInterstitialVideoAd(activityContext);
+        else
+          interstitialVideoAd = new AdPopcornSSPInterstitialVideoAd(context);
+      }
+      if(interstitialVideoAd.isReady()) {
+        interstitialVideoAd.showAd();
+      }
+      else {
+        if(channel != null)
+          channel.invokeMethod("APSSPInterstitialVideoAdShowFail", argumentsMap("placementId", placementId));
+      }
+    }catch (Exception e){}
+  }
+
+  private void callLoadRewardVideo(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPRewardVideoAd rewardVideoAd;
+      if(rewardVideoAdMap.containsKey(placementId))
+      {
+        rewardVideoAd = rewardVideoAdMap.get(placementId);
+      }
+      else
+      {
+        if(activityContext != null)
+          rewardVideoAd = new AdPopcornSSPRewardVideoAd(activityContext);
+        else
+          rewardVideoAd = new AdPopcornSSPRewardVideoAd(context);
+        rewardVideoAdMap.put(placementId, rewardVideoAd);
+      }
+      rewardVideoAd.setPlacementId(placementId);
+      rewardVideoAd.setRewardVideoAdEventCallbackListener(new IRewardVideoAdEventCallbackListener() {
+        @Override
+        public void OnRewardVideoAdLoaded() {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardVideoAdLoadSuccess", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnRewardVideoAdLoadFailed(SSPErrorCode sspErrorCode) {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardVideoAdLoadFail", argumentsMap("placementId", placementId, "errorCode", sspErrorCode.getErrorCode()));
+        }
+
+        @Override
+        public void OnRewardVideoAdOpened() {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardVideoAdShowSuccess", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnRewardVideoAdOpenFalied() {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardVideoAdShowFail", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnRewardVideoAdClosed() {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardVideoAdClosed", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnRewardVideoPlayCompleted(int adNetworkNo, boolean completed) {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardVideoAdPlayCompleted", argumentsMap("placementId", placementId, "adNetworkNo", adNetworkNo, "completed", completed));
+        }
+
+        @Override
+        public void OnRewardVideoAdClicked() {
+
+        }
+
+        @Override
+        public void OnRewardPlusCompleted(boolean b, int i, int i1) {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardPlusCompleteResult", argumentsMap("placementId", placementId));
+        }
+      });
+      rewardVideoAd.loadAd();
+    }catch (Exception e){}
+  }
+
+  private void callShowRewardVideo(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPRewardVideoAd rewardVideoAd;
+      if(rewardVideoAdMap.containsKey(placementId))
+      {
+        rewardVideoAd = rewardVideoAdMap.get(placementId);
+        if(activityContext != null && activityContext instanceof Activity)
+          rewardVideoAd.setCurrentActivity((Activity)activityContext);
+      }
+      else
+      {
+        if(activityContext != null)
+          rewardVideoAd = new AdPopcornSSPRewardVideoAd(activityContext);
+        else
+          rewardVideoAd = new AdPopcornSSPRewardVideoAd(context);
+      }
+      if(rewardVideoAd.isReady()) {
+        rewardVideoAd.showAd();
+      }
+      else {
+        if(channel != null)
+          channel.invokeMethod("APSSPRewardVideoAdShowFail", argumentsMap("placementId", placementId));
+      }
+    }catch (Exception e){}
+  }
+
+  private void callLoadVideoMix(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPVideoMixAd videoMixAd;
+      if(videoMixAdMap.containsKey(placementId))
+      {
+        videoMixAd = videoMixAdMap.get(placementId);
+      }
+      else
+      {
+        if(activityContext != null)
+          videoMixAd = new AdPopcornSSPVideoMixAd(activityContext);
+        else
+          videoMixAd = new AdPopcornSSPVideoMixAd(context);
+        videoMixAdMap.put(placementId, videoMixAd);
+      }
+      videoMixAd.setPlacementId(placementId);
+      videoMixAd.setVideoMixAdEventCallbackListener(new IVideoMixAdEventCallbackListener() {
+        @Override
+        public void OnVideoMixAdLoaded() {
+          if(channel != null)
+            channel.invokeMethod("APSSPVideoMixAdLoadSuccess", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnVideoMixAdLoadFailed(SSPErrorCode sspErrorCode) {
+          if(channel != null)
+            channel.invokeMethod("APSSPVideoMixAdLoadFail", argumentsMap("placementId", placementId, "errorCode", sspErrorCode.getErrorCode()));
+        }
+
+        @Override
+        public void OnVideoMixAdOpened() {
+          if(channel != null)
+            channel.invokeMethod("APSSPVideoMixAdShowSuccess", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnVideoMixAdOpenFailed() {
+          if(channel != null)
+            channel.invokeMethod("APSSPVideoMixAdShowFail", argumentsMap("placementId", placementId));
+        }
+
+        @Override
+        public void OnVideoMixAdClosed(int campaignType) {
+          if(channel != null)
+            channel.invokeMethod("APSSPVideoMixAdClosed", argumentsMap("placementId", placementId, "campaignType", campaignType));
+        }
+
+        @Override
+        public void OnVideoMixPlayCompleted(int adNetworkNo, boolean completed) {
+          if(channel != null)
+            channel.invokeMethod("APSSPVideoMixAdPlayCompleted", argumentsMap("placementId", placementId, "adNetworkNo", adNetworkNo, "completed", completed));
+        }
+
+        @Override
+        public void OnVideoMixAdClicked() {
+        }
+      });
+      videoMixAd.loadAd();
+    }catch (Exception e){}
+  }
+
+  private void callShowVideoMix(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPVideoMixAd videoMixAd;
+      if(videoMixAdMap.containsKey(placementId))
+      {
+        videoMixAd = videoMixAdMap.get(placementId);
+        if(activityContext != null && activityContext instanceof Activity)
+          videoMixAd.setCurrentActivity((Activity)activityContext);
+      }
+      else
+      {
+        if(activityContext != null)
+          videoMixAd = new AdPopcornSSPVideoMixAd(activityContext);
+        else
+          videoMixAd = new AdPopcornSSPVideoMixAd(context);
+      }
+      if(videoMixAd.isReady()) {
+        videoMixAd.showAd();
+      }
+      else {
+        if(channel != null)
+          channel.invokeMethod("APSSPVideoMixAdShowFail", argumentsMap("placementId", placementId));
+      }
+    }catch (Exception e){}
+  }
+
+  private void callOpenContents(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPContentsAd contentsAd;
+      if(contentsAdMap.containsKey(placementId))
+      {
+        contentsAd = contentsAdMap.get(placementId);
+      }
+      else
+      {
+        contentsAd = new AdPopcornSSPContentsAd(context);
+        contentsAdMap.put(placementId, contentsAd);
+      }
+      contentsAd.setPlacementId(placementId);
+      contentsAd.setContentsAdEventCallbackListener(new IContentsAdEventCallbackListener() {
+        @Override
+        public void OnContentsAdOpened() {
+          if(channel != null)
+            channel.invokeMethod("ContentsAdOpenSuccess", argumentsMap());
+        }
+
+        @Override
+        public void OnContentsAdOpenFailed(SSPErrorCode sspErrorCode) {
+          if(channel != null)
+            channel.invokeMethod("ContentsAdOpenFail", argumentsMap());
+        }
+
+        @Override
+        public void OnContentsAdClosed() {
+          if(channel != null)
+            channel.invokeMethod("ContentsAdClosed", argumentsMap());
+        }
+
+        @Override
+        public void OnContentsAdCompleted(long reward, String rewardKey) {
+          if(channel != null)
+            channel.invokeMethod("ContentsAdCompleted", argumentsMap("reward", reward, "rewardKey", rewardKey));
+        }
+      });
+      contentsAd.openContents();
+    }catch (Exception e){}
+  }
+
+  private void callOpenRewardPlusSetting(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      AdPopcornSSP.openRewardPlusSetting(context);
+    }catch (Exception e){}
+  }
+
+  private void callGetRewardPlusUserSetting(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      AdPopcornSSP.getRewardPlusUserSetting(new IRewardPlusSettingEventCallbackListener() {
+        @Override
+        public void OnRewardPlusUserSettingInfo(String connectedId, int dailyUserLimit, int dailyUserCount) {
+          new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+              if(channel != null)
+                channel.invokeMethod("APSSPRewardPlusSettingInfo",
+                        argumentsMap("connectedId", connectedId, "dailyUserLimit", dailyUserLimit,
+                                "dailyUserCount", dailyUserCount));
+            }
+          });
+        }
+      });
+    }catch (Exception e){}
+  }
+
+  private void callOpenPopContents(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      final String placementId = call.argument("placementId");
+      AdPopcornSSPPopContentsAd popContentsAd;
+      if(popContentsAdMap.containsKey(placementId))
+      {
+        popContentsAd = popContentsAdMap.get(placementId);
+      }
+      else
+      {
+        popContentsAd = new AdPopcornSSPPopContentsAd(context);
+        popContentsAdMap.put(placementId, popContentsAd);
+      }
+      popContentsAd.setPlacementId(placementId);
+      popContentsAd.setPopContentsAdEventCallbackListener(new IPopContentsAdEventCallbackListener() {
+        @Override
+        public void OnPopContentsAdOpened() {
+          if(channel != null)
+            channel.invokeMethod("PopContentsAdOpenSuccess", argumentsMap());
+        }
+
+        @Override
+        public void OnPopContentsAdOpenFailed(SSPErrorCode sspErrorCode) {
+          if(channel != null)
+            channel.invokeMethod("PopContentsAdOpenFail", argumentsMap());
+        }
+
+        @Override
+        public void OnPopContentsAdClosed() {
+          if(channel != null)
+            channel.invokeMethod("PopContentsAdClosed", argumentsMap());
+        }
+      });
+      popContentsAd.openPopContents();
+    }catch (Exception e){}
+  }
+
+  private void callOpenRewardAdPlusPage(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      String version = "";
+      if(call.hasArgument("version")) {
+        version = call.argument("version");
+        if (version == null || version.isEmpty())
+          version = "1.5";
+      }
+      AdPopcornSSPRewardAdPlus.openRewardAdPlusPage(context, version);
+    }catch (Exception e){}
+  }
+
+  private void callGetRewardAdPlusUserMediaStatus(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      AdPopcornSSPRewardAdPlus.getRewardAdPlusUserStatus(context, null, new IRewardAdPlusUserStatusCallbackListener()
+      {
+        @Override
+        public void OnRewardAdPlusUserMediaStatus(boolean result, int totalBoxCount, List<RewardAdPlusPlacementStatusModel> placementStatusList) {
+          if(channel != null) {
+            try{
+              JSONArray returnArray = new JSONArray();
+              for(RewardAdPlusPlacementStatusModel placementStatusModel : placementStatusList){
+                JSONObject object = new JSONObject();
+                object.put("placementId", placementStatusModel.getPlacementId());
+                object.put("dailyUserLimit", placementStatusModel.getDailyUserLimit());
+                object.put("dailyUserCount", placementStatusModel.getDailyUserCount());
+                returnArray.put(object);
+              }
+              channel.invokeMethod("APSSPRewardAdPlusUserMediaStatus",
+                      argumentsMap("result", result, "totalBoxCount", totalBoxCount,
+                              "placementStatusList", returnArray.toString()));
+            }catch (Exception e){}
+          }
+        }
+
+        @Override
+        public void OnRewardAdPlusUserPlacementStatus(boolean result, String placementId, int dailyUserLimit, int dailyUserCount) {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardAdPlusUserPlacementStatus",
+                    argumentsMap("result", result, "placementId", placementId, "dailyUserLimit", dailyUserLimit,
+                            "dailyUserCount", dailyUserCount));
+        }
+      });
+    }catch (Exception e){}
+  }
+
+  private void callGetRewardAdPlusUserPlacementStatus(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      String placementId = "";
+      if(call.hasArgument("placementId")){
+        placementId = call.argument("placementId");
+      }
+      AdPopcornSSPRewardAdPlus.getRewardAdPlusUserStatus(context, placementId, new IRewardAdPlusUserStatusCallbackListener()
+      {
+        @Override
+        public void OnRewardAdPlusUserMediaStatus(boolean result, int totalBoxCount, List<RewardAdPlusPlacementStatusModel> placementStatusList) {
+          if(channel != null) {
+            try{
+              JSONArray returnArray = new JSONArray();
+              for(RewardAdPlusPlacementStatusModel placementStatusModel : placementStatusList){
+                JSONObject object = new JSONObject();
+                object.put("placementId", placementStatusModel.getPlacementId());
+                object.put("dailyUserLimit", placementStatusModel.getDailyUserLimit());
+                object.put("dailyUserCount", placementStatusModel.getDailyUserCount());
+                returnArray.put(object);
+              }
+              channel.invokeMethod("APSSPRewardAdPlusUserMediaStatus",
+                      argumentsMap("result", result, "totalBoxCount", totalBoxCount,
+                              "placementStatusList", returnArray.toString()));
+            }catch (Exception e){}
+          }
+        }
+
+        @Override
+        public void OnRewardAdPlusUserPlacementStatus(boolean result, String placementId, int dailyUserLimit, int dailyUserCount) {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardAdPlusUserPlacementStatus",
+                    argumentsMap("result", result, "placementId", placementId, "dailyUserLimit", dailyUserLimit,
+                            "dailyUserCount", dailyUserCount));
+        }
+      });
+    }catch (Exception e){}
+  }
+
+  private void callSetRewardAdPlusEventListener(@NonNull MethodCall call, @NonNull Result result)
+  {
+    try{
+      AdPopcornSSPRewardAdPlus.setRewardAdPlusEventListener(new IRewardAdEventCallbackListener() {
+        @Override
+        public void OnClosedRewardAdPlusPage() {
+          if(channel != null)
+            channel.invokeMethod("APSSPClosedRewardAdPlusPage",argumentsMap());
+        }
+
+        @Override
+        public void OnEventResult(int resultCode, String resultMessage) {
+          if(channel != null)
+            channel.invokeMethod("APSSPRewardAdPlusEventResult",
+                    argumentsMap("resultCode", resultCode, "resultMessage", resultMessage));
+        }
+      });
+    }catch (Exception e){}
+  }
+
+  private Map<String, Object> argumentsMap(Object... args) {
+    Map<String, Object> arguments = new HashMap<>();
+    try{
+      for (int i = 0; i < args.length; i += 2) arguments.put(args[i].toString(), args[i + 1]);
+    }catch (Exception e){}
+    return arguments;
+  }
+
+  @Override
+  public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+    context = null;
+    activityContext = null;
+    if(channel != null) {
+      channel.setMethodCallHandler(null);
+      channel = null;
+    }
+  }
+}

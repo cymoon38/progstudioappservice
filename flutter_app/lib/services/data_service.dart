@@ -245,9 +245,10 @@ class UserMission {
   final String missionId;
   final bool completed;
   final DateTime? completedAt;
-  final int progress; // 진행도 (예: 좋아요 5/10개)
-  final DateTime? startTime; // 미션 시작 시간 (like_click 미션용)
-  final List<String> likedPostIds; // 좋아요를 누른 게시물 ID 목록 (like_click 미션용, 중복 방지)
+  final int progress; // 진행도 (예: 좋아요 5/10개, 인기작품 참가 후 선정 횟수)
+  final DateTime? startTime; // 미션 시작 시간
+  final List<String> likedPostIds; // 좋아요를 누른 게시물 ID 목록 (like_click 미션용)
+  final int? popularCountAtStart; // 인기작품 한 번 선정 미션: 참가 시점의 인기작품 선정 수
 
   UserMission({
     required this.id,
@@ -258,6 +259,7 @@ class UserMission {
     this.progress = 0,
     this.startTime,
     this.likedPostIds = const [],
+    this.popularCountAtStart,
   });
 
   factory UserMission.fromFirestore(DocumentSnapshot doc) {
@@ -271,6 +273,7 @@ class UserMission {
       progress: data['progress'] ?? 0,
       startTime: (data['startTime'] as Timestamp?)?.toDate(),
       likedPostIds: (data['likedPostIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      popularCountAtStart: data['popularCountAtStart'] is int ? data['popularCountAtStart'] as int : null,
     );
   }
 }
@@ -1161,6 +1164,10 @@ class DataService extends ChangeNotifier {
               } catch (e) {
                 debugPrint('❌ 글쓴이 코인 지급 오류: $e');
               }
+              // 인기작품 한 번 선정 되기 미션: 참가 후 선정되면 1000코인 완료
+              _checkAndCompletePopularOnceMission(authorUidForCoins).catchError((e) {
+                debugPrint('인기작품 미션 체크 오류 (무시): $e');
+              });
             } else {
               debugPrint('❌ 글쓴이 UID를 찾을 수 없어 코인을 지급할 수 없음: $authorName');
             }
@@ -2908,7 +2915,7 @@ class DataService extends ChangeNotifier {
       _missions.sort((a, b) => a.reward.compareTo(b.reward));
       
       // 필수 미션 타입 확인
-      final requiredMissionTypes = ['first_upload', 'like_click'];
+      final requiredMissionTypes = ['first_upload', 'like_click', 'popular_once'];
       final existingTypes = _missions.map((m) => m.type).toSet();
       final missingTypes = requiredMissionTypes.where((type) => !existingTypes.contains(type)).toList();
       
@@ -2955,6 +2962,14 @@ class DataService extends ChangeNotifier {
         'type': 'like_click',
         'isRepeatable': true,
         'targetCount': 3,
+      },
+      {
+        'title': '인기작품 한 번 선정 되기',
+        'description': '미션 참가 후 30일 이내에 인기작품 선정 횟수가 목표만큼 늘면 1000코인을 받을 수 있습니다 (테스트용 1회, 추후 10회 등으로 변경 가능)',
+        'reward': 1000,
+        'type': 'popular_once',
+        'isRepeatable': true,
+        'targetCount': 1,
       },
     ];
 
@@ -3161,6 +3176,13 @@ class DataService extends ChangeNotifier {
         debugPrint('✅ [startMission] 좋아요 3개 미션 참가비 50코인 차감 완료');
       }
 
+      // 인기작품 한 번 선정 되기: 참가 시점의 인기작품 선정 수를 기준으로 저장
+      int? popularCountAtStart;
+      if (mission.type == 'popular_once') {
+        popularCountAtStart = await getUserPopularPostCount(userId);
+        debugPrint('✅ [startMission] popular_once 참가 시 인기작품 수: $popularCountAtStart');
+      }
+
       if (snapshot.exists) {
         final data = snapshot.data() as Map<String, dynamic>;
         final existingUserId = data['userId'] as String?;
@@ -3174,6 +3196,9 @@ class DataService extends ChangeNotifier {
         };
         if (mission.type == 'like_click') {
           updateData['likedPostIds'] = [];
+        }
+        if (mission.type == 'popular_once' && popularCountAtStart != null) {
+          updateData['popularCountAtStart'] = popularCountAtStart;
         }
         await docRef.update(updateData);
         debugPrint('✅ [startMission] update 성공');
@@ -3189,6 +3214,9 @@ class DataService extends ChangeNotifier {
       };
         if (mission.type == 'like_click') {
           dataToSet['likedPostIds'] = [];
+        }
+        if (mission.type == 'popular_once' && popularCountAtStart != null) {
+          dataToSet['popularCountAtStart'] = popularCountAtStart;
         }
         await docRef.set(dataToSet);
         debugPrint('✅ [startMission] create 성공');
@@ -3308,12 +3336,15 @@ class DataService extends ChangeNotifier {
         'completed': true,
         'completedAt': FieldValue.serverTimestamp(),
       };
-      // 재참가 가능한 미션이면 진행도를 0으로 리셋하고 startTime도 삭제
+      // 재참가 가능한 미션이면 진행도를 0으로 리셋하고 startTime 등 삭제
       if (mission.isRepeatable) {
         updateData['progress'] = 0;
         updateData['startTime'] = FieldValue.delete();
         if (mission.type == 'like_click') {
           updateData['likedPostIds'] = [];
+        }
+        if (mission.type == 'popular_once') {
+          updateData['popularCountAtStart'] = FieldValue.delete();
         }
       } else {
         // 반복 불가 미션은 완료 시 progress를 1로 두는 기존 동작 유지
@@ -3473,6 +3504,21 @@ class DataService extends ChangeNotifier {
     }
   }
 
+  /// 사용자의 인기작품 선정 수 (참가 시점 기준: authorUid가 해당 사용자이고 isPopular == true인 게시물 수)
+  Future<int> getUserPopularPostCount(String userId) async {
+    if (userId.isEmpty) return 0;
+    try {
+      final snapshot = await _firestore
+          .collection('posts')
+          .where('authorUid', isEqualTo: userId)
+          .get();
+      return snapshot.docs.where((d) => d.data()['isPopular'] == true).length;
+    } catch (e) {
+      debugPrint('인기작품 수 조회 오류: $e');
+      return 0;
+    }
+  }
+
   // 첫 작품 업로드 미션 체크 및 완료 처리
   Future<void> _checkAndCompleteFirstUploadMission(String userId) async {
     try {
@@ -3570,6 +3616,55 @@ class DataService extends ChangeNotifier {
     }
   }
 
+  /// 인기작품 선정 시 작성자의 '인기작품 한 번 선정 되기' 미션 진행도 갱신 및 완료 처리.
+  /// 참가 시점(popularCountAtStart) 대비 선정 수가 targetCount만큼 늘면 완료. 기한 30일.
+  static const int popularOnceMissionDays = 30;
+
+  Future<void> _checkAndCompletePopularOnceMission(String authorUid) async {
+    if (authorUid.isEmpty) return;
+    try {
+      if (_missions.isEmpty) await getMissions();
+      final popularOnceMissions = _missions.where((m) => m.type == 'popular_once').toList();
+      if (popularOnceMissions.isEmpty) return;
+
+      final currentCount = await getUserPopularPostCount(authorUid);
+
+      for (final mission in popularOnceMissions) {
+        final docRef = _firestore.collection('userMissions').doc(_userMissionDocId(authorUid, mission.id));
+        final snapshot = await docRef.get();
+        if (!snapshot.exists) continue;
+        final data = snapshot.data() as Map<String, dynamic>;
+        if (data['completed'] == true) continue;
+        final startTime = (data['startTime'] as Timestamp?)?.toDate();
+        if (startTime == null) continue;
+
+        final baseline = (data['popularCountAtStart'] is int) ? data['popularCountAtStart'] as int : 0;
+        final progress = (currentCount - baseline).clamp(0, 999);
+        final targetCount = mission.targetCount ?? 1;
+        final endTime = startTime.add(const Duration(days: popularOnceMissionDays));
+        final withinDeadline = DateTime.now().isBefore(endTime);
+
+        await docRef.update({'progress': progress});
+
+        if (withinDeadline && progress >= targetCount) {
+          final success = await completeMission(
+            userId: authorUid,
+            missionId: mission.id,
+            missionType: 'popular_once',
+          );
+          if (success) {
+            debugPrint('✅ 인기작품 한 번 선정 미션 완료: $authorUid (진행 $progress/$targetCount, 1000코인 지급)');
+            await getUserMissions(authorUid);
+            notifyListeners();
+          }
+        }
+        break;
+      }
+    } catch (e) {
+      debugPrint('인기작품 한 번 선정 미션 체크 오류 (무시): $e');
+    }
+  }
+
   // 사용자에게 표시할 미션 목록 가져오기 (조건부 필터링)
   Future<List<Mission>> getAvailableMissions(String? userId) async {
     try {
@@ -3605,8 +3700,8 @@ class DataService extends ChangeNotifier {
 
       final List<Mission> result = [];
       
-      // 표시할 미션 타입 목록 (first_upload, like_click만 표시)
-      final allowedMissionTypes = ['first_upload', 'like_click'];
+      // 표시할 미션 타입 목록
+      final allowedMissionTypes = ['first_upload', 'like_click', 'popular_once'];
       
       // 모든 미션 필터링
       for (final mission in _missions) {
@@ -3628,6 +3723,15 @@ class DataService extends ChangeNotifier {
           final userMission = _userMissions[mission.id];
           if (userMission != null && userMission.completed) {
             debugPrint('📋 이미 완료한 first_upload 미션 제외: ${mission.id}');
+            continue;
+          }
+        }
+
+        // 인기작품 한 번 선정 되기: 반복 불가일 때만 완료 후 숨김
+        if (mission.type == 'popular_once') {
+          final userMission = _userMissions[mission.id];
+          if (userMission != null && userMission.completed && !mission.isRepeatable) {
+            debugPrint('📋 이미 완료한 popular_once 미션 제외 (반복 불가): ${mission.id}');
             continue;
           }
         }

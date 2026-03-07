@@ -109,7 +109,7 @@ class _MissionScreenState extends State<MissionScreen> {
       final List<Mission> result = [];
       
       // 표시할 미션 타입 목록
-      final allowedMissionTypes = ['first_upload', 'like_click'];
+      final allowedMissionTypes = ['first_upload', 'like_click', 'popular_once'];
       
       // 모든 미션 필터링
       for (final mission in dataService.missions) {
@@ -129,6 +129,12 @@ class _MissionScreenState extends State<MissionScreen> {
           if (_userPostCount >= 1) {
             continue;
           }
+        }
+
+        // 인기작품 한 번 선정 되기: 반복 불가일 때만 완료 후 숨김
+        if (mission.type == 'popular_once') {
+          final userMission = dataService.userMissions[mission.id];
+          if (userMission != null && userMission.completed && !mission.isRepeatable) continue;
         }
         
         result.add(mission);
@@ -281,9 +287,11 @@ class _MissionScreenState extends State<MissionScreen> {
               children: [
                 // 설명 문구
                 Text(
-                  mission.type == 'like_click' 
+                  mission.type == 'like_click'
                       ? '일주일 동안 좋아요 3개를 누르세요'
-                      : '7일 동안 작품이 7번 인기작품으로 선정되세요',
+                      : mission.type == 'popular_once'
+                          ? '참가 시점을 기준으로 30일 이내에 인기작품 선정이 ${mission.targetCount ?? 1}회 늘면 1000코인을 받을 수 있습니다'
+                          : '7일 동안 작품이 7번 인기작품으로 선정되세요',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -389,7 +397,7 @@ class _MissionScreenState extends State<MissionScreen> {
                         shadowColor: Colors.black.withOpacity(0.3),
                       ),
                       child: mission.type == 'like_click'
-                          ? Row(
+                          ? Row( // 좋아요 3개: 참가비 50코인 표시
                               mainAxisSize: MainAxisSize.min,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
@@ -473,7 +481,7 @@ class _MissionScreenState extends State<MissionScreen> {
                             ),
                           ),
                           Text(
-                            '$progress / ${mission.targetCount ?? 3}',
+                            '$progress / ${mission.targetCount ?? (mission.type == 'popular_once' ? 1 : 3)}',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -486,7 +494,7 @@ class _MissionScreenState extends State<MissionScreen> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
-                          value: (progress / (mission.targetCount ?? 3)).clamp(0.0, 1.0),
+                          value: (progress / (mission.targetCount ?? (mission.type == 'popular_once' ? 1 : 3)).toDouble()).clamp(0.0, 1.0),
                           backgroundColor: Colors.grey[200],
                           valueColor: const AlwaysStoppedAnimation<Color>(
                             AppTheme.primaryColor,
@@ -495,13 +503,14 @@ class _MissionScreenState extends State<MissionScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      // 7일 카운트다운
-                      if (startTime != null)
+                      // 기한 카운트다운: like_click 7일, popular_once 30일
+                      if (startTime != null && (mission.type == 'like_click' || mission.type == 'popular_once'))
                         StreamBuilder<DateTime>(
                           stream: Stream.periodic(const Duration(seconds: 1), (_) => DateTime.now()),
                           builder: (context, snapshot) {
                             final now = snapshot.data ?? DateTime.now();
-                            final endTime = startTime!.add(const Duration(days: 7));
+                            final daysLimit = mission.type == 'popular_once' ? 30 : 7;
+                            final endTime = startTime!.add(Duration(days: daysLimit));
                             final remaining = endTime.difference(now);
                             
                             if (remaining.isNegative) {
@@ -590,7 +599,7 @@ class _MissionScreenState extends State<MissionScreen> {
               child: CustomScrollView(
                 physics: const ClampingScrollPhysics(),
                 slivers: [
-                  // 상단 네비게이션 아래 네이티브 광고 (테스트: NATIVE_TEMPLATE)
+                  // 상단 네비게이션 아래 네이티브 광고 (캔버스 캐시 미션 상단 네이티브)
                   const SliverToBoxAdapter(
                     child: _MissionAdBanner(),
                   ),
@@ -733,14 +742,13 @@ class _MissionScreenState extends State<MissionScreen> {
                                 targetCount: targetCount,
                                 progressPercent: progressPercent,
                                 hasStarted: hasStarted,
-                                onTap: authService.user != null && mission.type != 'first_upload'
+                                onTap: authService.user != null && mission.type != 'first_upload' && mission.type != 'popular_once'
                                     ? () async {
-                                        // 첫 작품 업로드 미션은 수동 완료 불가 (자동 완료만 가능)
-                                        // like_click 미션의 경우, 미션이 시작되었고 완료되지 않았을 때만 수동 완료 가능
+                                        // 첫 작품 업로드: 자동 완료만. popular_once: 인기작품 선정 시에만 자동 완료.
+                                        // like_click만 카드 탭으로 수동 완료 가능 (미션 시작 후에만)
                                         if (mission.type == 'like_click') {
                                           final userMission = dataService.userMissions[mission.id];
                                           if (userMission == null || userMission.startTime == null || userMission.completed) {
-                                            // 미션이 시작되지 않았거나 이미 완료된 경우 아무것도 하지 않음
                                             return;
                                           }
                                         }
@@ -784,7 +792,7 @@ class _MissionScreenState extends State<MissionScreen> {
                                     : null,
                                 onRewardTap: mission.type == 'first_upload'
                                     ? () => _navigateToFeedAndOpenUpload(context)
-                                    : mission.type == 'like_click'
+                                    : (mission.type == 'like_click' || mission.type == 'popular_once')
                                         ? () => _showTimeLimitedMissionPopup(context, mission)
                                         : null,
                               );
@@ -811,7 +819,7 @@ class _MissionScreenState extends State<MissionScreen> {
   }
 }
 
-/// 미션 페이지 상단 네이티브 광고 (상용: NAM 360x50 / 테스트 NATIVE_TEMPLATE는 더 큰 크리에이티브를 줄 수 있음)
+/// 미션 페이지 상단 네이티브 광고 (캔버스 캐시 미션 상단 네이티브)
 class _MissionAdBanner extends StatefulWidget {
   const _MissionAdBanner();
 
@@ -821,8 +829,8 @@ class _MissionAdBanner extends StatefulWidget {
 
 class _MissionAdBannerState extends State<_MissionAdBanner> {
   static const String _viewType = 'AdPopcornSSPNativeView';
-  static const String _appKey = '663451319';
-  static const String _placementId = 'NATIVE_TEMPLATE';
+  static const String _appKey = '123870086';
+  static const String _placementId = 'RBaJEGYIBLNXqNs'; // 캔버스 캐시 미션 상단 네이티브
   static const double _adWidthMax = 360;
   static const double _adHeight = 50; // 요청 높이 (NAM 360x50)
   /// 테스트 시 크리에이티브가 더 크게 올 수 있어 잘림 방지용 표시 높이
@@ -874,7 +882,7 @@ class _MissionAdBannerState extends State<_MissionAdBanner> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: SizedBox(
-            key: const ValueKey('native_ad_mission_NATIVE_TEMPLATE'),
+            key: ValueKey('native_ad_mission_$_placementId'),
             width: adWidth,
             height: _visibleHeight,
             child: AndroidView(
@@ -894,7 +902,7 @@ class _MissionAdBannerState extends State<_MissionAdBanner> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
           child: SizedBox(
-            key: const ValueKey('native_ad_mission_NATIVE_TEMPLATE'),
+            key: ValueKey('native_ad_mission_$_placementId'),
             width: adWidth,
             height: _visibleHeight,
             child: UiKitView(
@@ -1012,8 +1020,8 @@ class _MissionCard extends StatelessWidget {
                           ),
                         ),
                       ],
-                      // 미션을 시작했고 완료하지 않았을 때만 진행도 표시
-                      if (targetCount > 1 && !isCompleted && hasStarted) ...[
+                      // 미션을 시작했고 완료하지 않았을 때만 진행도 표시 (popular_once는 targetCount 1이어도 0/1 표시)
+                      if (targetCount >= 1 && !isCompleted && hasStarted) ...[
                         const SizedBox(height: 8),
                         Padding(
                           padding: const EdgeInsets.only(left: 20),

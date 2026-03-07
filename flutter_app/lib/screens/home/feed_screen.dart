@@ -362,7 +362,8 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 }
 
-// 네이티브 광고 (애드팝콘 SSP) - 테스트: AppKey 663451319, Placement ID NATIVE
+// 네이티브 광고 (애드팝콘 SSP) - 상용: 앱키 123870086, 캔버스 캐시 홈 네이티브
+// [가이드] 네이티브는 사용자 환경에 맞춰 자동 최적화. width/height를 creationParams로 전달해 화면 크기별 요청( setReactNativeWidth/Height ).
 // 플레이스먼트 허용 사이즈 1200x627 → 요청 크기를 이 비율로 맞춰 5002(No Ad) 방지
 //
 // [가이드] 광고가 나올 때도 있고 안 나올 때도 있는 이유:
@@ -381,12 +382,12 @@ class _AdBannerSection extends StatefulWidget {
 
 class _AdBannerSectionState extends State<_AdBannerSection> {
   static const String _viewType = 'AdPopcornSSPNativeView';
-  static const String _appKey = '663451319';
-  static const String _placementId = 'NATIVE';
+  static const String _appKey = '123870086';
+  static const String _placementId = 'RMArXdt3NJV48Ph'; // 캔버스 캐시 홈 네이티브
 
-  /// 플레이스먼트 허용 비율 1200x627 기준. 최소 280으로 하단 카드가 잘리지 않게 함.
+  /// 플레이스먼트 허용 비율 1200:627 유지. 기기 폭에 맞춰 같은 비율로만 스케일.
   static double _heightForWidth(double width) {
-    return (width * 627 / 1200).clamp(280.0, 400.0);
+    return width * 627 / 1200;
   }
 
   bool _loadFailed = false;
@@ -418,87 +419,71 @@ class _AdBannerSectionState extends State<_AdBannerSection> {
     if (_hideAdSectionForDebug) return const SizedBox.shrink();
     if (_loadFailed) return const SizedBox.shrink();
 
-    final screenWidth = MediaQuery.of(context).size.width;
-    // 너무 넓은 화면에서는 최대 폭을 제한해 가운데 카드처럼 보이게 함
-    const double maxAdWidth = 480.0;
-    final adWidth = screenWidth > maxAdWidth ? maxAdWidth : screenWidth;
-    final adHeight = _heightForWidth(adWidth);
-    // 홈 네이티브 광고: 자르지 않고 전체 노출
-    final visibleHeight = adHeight;
+    // 실제 이 위젯이 차지하는 가로 폭(버튼 박스와 동일)으로 광고 크기 계산 → 기기/레이아웃이 달라도 같은 비율 유지
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const double horizontalMargin = 16;
+        final contentMaxWidth = constraints.maxWidth;
+        final adWidth = (contentMaxWidth - horizontalMargin * 2).clamp(0.0, double.infinity);
+        final adHeight = _heightForWidth(adWidth);
+        final visibleHeight = adHeight;
 
-    // 플레이스먼트 허용 사이즈(1200x627) 비율로 요청해 크기 불일치 5002 방지
-    final creationParams = <String, dynamic>{
-      'appKey': _appKey,
-      'placementId': _placementId,
-      if (Platform.isAndroid) ...{
-        'width': adWidth.round(),
-        'height': adHeight.round(),
+        final creationParams = <String, dynamic>{
+          'appKey': _appKey,
+          'placementId': _placementId,
+          if (Platform.isAndroid) ...{
+            'width': adWidth.round(),
+            'height': adHeight.round(),
+          },
+        };
+
+        Widget wrapAd(Widget ad) => Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          width: adWidth,
+          height: visibleHeight,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: ad,
+          ),
+        );
+
+        if (Platform.isAndroid) {
+          return wrapAd(SizedBox(
+            key: ValueKey('native_ad_$_placementId'),
+            width: adWidth,
+            height: visibleHeight,
+            child: AndroidView(
+              viewType: _viewType,
+              creationParams: creationParams,
+              creationParamsCodec: const StandardMessageCodec(),
+            ),
+          ));
+        }
+        if (Platform.isIOS) {
+          return wrapAd(SizedBox(
+            key: const ValueKey('native_ad_NATIVE'),
+            width: adWidth,
+            height: visibleHeight,
+            child: UiKitView(
+              viewType: _viewType,
+              creationParams: creationParams,
+              creationParamsCodec: const StandardMessageCodec(),
+            ),
+          ));
+        }
+        return const SizedBox.shrink();
       },
-    };
-
-    if (Platform.isAndroid) {
-      return Center(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-          width: adWidth,
-          height: visibleHeight,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              key: ValueKey('native_ad_$_placementId'),
-              height: adHeight,
-              child: AndroidView(
-                viewType: _viewType,
-                creationParams: creationParams,
-                creationParamsCodec: const StandardMessageCodec(),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    if (Platform.isIOS) {
-      return Center(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-          width: adWidth,
-          height: visibleHeight,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              key: const ValueKey('native_ad_NATIVE'),
-              height: adHeight,
-              child: UiKitView(
-                viewType: _viewType,
-                creationParams: creationParams,
-                creationParamsCodec: const StandardMessageCodec(),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    return const SizedBox.shrink();
+    );
   }
 }
 

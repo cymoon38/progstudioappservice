@@ -11,9 +11,9 @@ import '../theme/app_theme.dart';
 import 'ban_dialog.dart';
 
 /// 애드팝콘 SSP 전면 비디오 광고 — 게시물 업로드 중 재생 (업로드와 동시에 전면 광고 표시).
-/// 테스트: AppKey 663451319, Placement ID VIDEO (Interstitial Video). 상용 시 123870086 및 실제 플레이스먼트 ID로 교체.
-const String _kSspAppKey = '663451319';
-const String _kUploadInterstitialVideoPlacementId = 'VIDEO';
+/// 상용: 앱키 123870086, 캔버스 캐시 동영상 광고 DOXC9iqfgy3QTIn
+const String _kSspAppKey = '123870086';
+const String _kUploadInterstitialVideoPlacementId = 'DOXC9iqfgy3QTin';
 
 class UploadModal extends StatefulWidget {
   const UploadModal({super.key});

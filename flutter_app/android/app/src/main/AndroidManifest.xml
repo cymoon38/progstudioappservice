@@ -40,8 +40,8 @@
         <meta-data android:name="adpopcorn_app_key" android:value="719270341"/>
         <meta-data android:name="adpopcorn_hash_key" android:value="f0914cb6664e4991"/>
         <meta-data android:name="enable_ap_log" android:value="enable"/>
-        <!-- 애드팝콘 SSP (테스트: AppKey 663451319 / 상용: 123870086) -->
-        <meta-data android:name="adpopcorn_ssp_app_key" android:value="663451319"/>
+        <!-- 애드팝콘 SSP: 가이드상 매니페스트에 앱키 필수. 상용 앱키 123870086 (플레이스먼트와 일치해야 2030 방지) -->
+        <meta-data android:name="adpopcorn_ssp_app_key" android:value="123870086"/>
         <!-- AdMob 미디에이션: 아래는 테스트 ID. 상용 배포 시 AdMob 콘솔/애드팝콘 사업팀 발급 ID로 교체 -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
