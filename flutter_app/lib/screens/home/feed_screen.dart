@@ -28,6 +28,8 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> {
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -39,6 +41,23 @@ class _FeedScreenState extends State<FeedScreen> {
       if (!mounted) return;
       await _checkCoalAdoptionDialog(context);
     });
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    final dataService = Provider.of<DataService>(context, listen: false);
+    if (!dataService.hasMorePosts || dataService.isLoadingMore || dataService.posts.isEmpty) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) {
+      dataService.loadMorePosts();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
   }
 
   /// 목탄 사용 후 24h~48h: 댓글 채택 다이얼로그(50코인), 48h 경과: 랜덤 채택
@@ -263,6 +282,7 @@ class _FeedScreenState extends State<FeedScreen> {
                     await dataService.getAllPosts();
                   },
                   child: CustomScrollView(
+                    controller: _scrollController,
                     physics: const AlwaysScrollableScrollPhysics(
                       parent: ClampingScrollPhysics(),
                     ),
@@ -311,6 +331,17 @@ class _FeedScreenState extends State<FeedScreen> {
                               );
                             },
                             childCount: dataService.posts.length,
+                          ),
+                        ),
+                      if (dataService.isLoadingMore)
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Center(child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )),
                           ),
                         ),
                       SliverToBoxAdapter(

@@ -22,9 +22,7 @@ class _PopularScreenState extends State<PopularScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<DataService>(context, listen: false).getPopularPosts();
-    });
+    // 인기작품은 탭 진입 시 HomeScreen에서 로드 (4-1 미리 로드 제거)
   }
 
   void _handleSearch() {

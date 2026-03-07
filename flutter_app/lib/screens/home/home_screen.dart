@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/custom_top_navbar.dart';
 import '../../widgets/custom_bottom_navbar.dart';
 import '../../services/auth_service.dart';
+import '../../services/data_service.dart';
 import '../../services/viewed_posts_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -57,6 +58,9 @@ class HomeScreenState extends State<HomeScreen> {
           setState(() {
             _currentIndex = index;
           });
+          if (index == 1) {
+            Provider.of<DataService>(context, listen: false).getPopularPosts();
+          }
         },
       ),
     );

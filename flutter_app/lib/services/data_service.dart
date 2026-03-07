@@ -414,47 +414,63 @@ class DataService extends ChangeNotifier {
   List<Post> _popularPosts = [];
   List<Post> _notices = [];
   bool _isLoading = false;
+  DocumentSnapshot<Map<String, dynamic>>? _lastPostDoc;
+  bool _hasMorePosts = true;
+  bool _isLoadingMore = false;
 
   List<Post> get posts => _posts;
   List<Post> get popularPosts => _popularPosts;
   List<Post> get notices => _notices;
   bool get isLoading => _isLoading;
+  bool get hasMorePosts => _hasMorePosts;
+  bool get isLoadingMore => _isLoadingMore;
 
-  Future<List<Post>> getAllPosts({int limit = 100}) async {
+  static const int _feedPageSize = 30;
+
+  void _sortPostsByFixedAndSortTime(List<Post> list) {
+    final now = DateTime.now();
+    DateTime? effectiveFixedUntil(Post p) {
+      DateTime? later;
+      if (p.charcoalFixedUntil != null && p.charcoalFixedUntil!.isAfter(now)) later = p.charcoalFixedUntil;
+      if (p.coalFixedUntil != null && p.coalFixedUntil!.isAfter(now)) {
+        if (later == null || p.coalFixedUntil!.isAfter(later)) later = p.coalFixedUntil;
+      }
+      return later;
+    }
+    list.sort((a, b) {
+      final aFixed = effectiveFixedUntil(a) != null;
+      final bFixed = effectiveFixedUntil(b) != null;
+      if (aFixed && !bFixed) return -1;
+      if (!aFixed && bFixed) return 1;
+      if (aFixed && bFixed) return (effectiveFixedUntil(b)!).compareTo(effectiveFixedUntil(a)!);
+      return (b.sortTime ?? b.date).compareTo(a.sortTime ?? a.date);
+    });
+  }
+
+  Future<List<Post>> getAllPosts({int limit = _feedPageSize}) async {
     try {
       _isLoading = true;
+      _lastPostDoc = null;
+      _hasMorePosts = true;
       notifyListeners();
       
-      // 비용 절감: limit 추가 (기본 100개, 필요시 더 로드)
       final snapshot = await _firestore
           .collection('posts')
           .orderBy('date', descending: true)
           .limit(limit)
           .get();
       
-      // 공지글(type: 'notice')은 제외하고 일반 게시물만 필터링
       _posts = snapshot.docs
           .map((doc) => Post.fromFirestore(doc))
           .where((post) => post.type != 'notice')
           .toList();
-      // 끌올(장작/목탄/석탄) 반영: 목탄 1시간·석탄 3시간 고정 → sortTime 기준 상단 노출
-      final now = DateTime.now();
-      DateTime? effectiveFixedUntil(Post p) {
-        DateTime? later;
-        if (p.charcoalFixedUntil != null && p.charcoalFixedUntil!.isAfter(now)) later = p.charcoalFixedUntil;
-        if (p.coalFixedUntil != null && p.coalFixedUntil!.isAfter(now)) {
-          if (later == null || p.coalFixedUntil!.isAfter(later)) later = p.coalFixedUntil;
-        }
-        return later;
+      _sortPostsByFixedAndSortTime(_posts);
+      if (snapshot.docs.isNotEmpty) {
+        _lastPostDoc = snapshot.docs.last;
+        _hasMorePosts = snapshot.docs.length >= limit;
+      } else {
+        _hasMorePosts = false;
       }
-      _posts.sort((a, b) {
-        final aFixed = effectiveFixedUntil(a) != null;
-        final bFixed = effectiveFixedUntil(b) != null;
-        if (aFixed && !bFixed) return -1;
-        if (!aFixed && bFixed) return 1;
-        if (aFixed && bFixed) return (effectiveFixedUntil(b)!).compareTo(effectiveFixedUntil(a)!);
-        return (b.sortTime ?? b.date).compareTo(a.sortTime ?? a.date);
-      });
       notifyListeners();
       return _posts;
     } catch (e) {
@@ -462,6 +478,44 @@ class DataService extends ChangeNotifier {
       rethrow;
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadMorePosts({int limit = _feedPageSize}) async {
+    if (_isLoadingMore || !_hasMorePosts || _lastPostDoc == null) return;
+    try {
+      _isLoadingMore = true;
+      notifyListeners();
+      final snapshot = await _firestore
+          .collection('posts')
+          .orderBy('date', descending: true)
+          .startAfterDocument(_lastPostDoc!)
+          .limit(limit)
+          .get();
+      final newPosts = snapshot.docs
+          .map((doc) => Post.fromFirestore(doc))
+          .where((post) => post.type != 'notice')
+          .toList();
+      final existingIds = _posts.map((e) => e.id).toSet();
+      for (final p in newPosts) {
+        if (!existingIds.contains(p.id)) {
+          _posts.add(p);
+          existingIds.add(p.id);
+        }
+      }
+      _sortPostsByFixedAndSortTime(_posts);
+      if (snapshot.docs.isNotEmpty) {
+        _lastPostDoc = snapshot.docs.last;
+        _hasMorePosts = snapshot.docs.length >= limit;
+      } else {
+        _hasMorePosts = false;
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('더 불러오기 오류: $e');
+    } finally {
+      _isLoadingMore = false;
       notifyListeners();
     }
   }
@@ -2865,12 +2919,7 @@ class DataService extends ChangeNotifier {
         debugPrint('피드 새로고침 오류 (무시): $e');
         return <Post>[];
       });
-      
-      // 인기작품 새로고침도 백그라운드에서 처리
-      getPopularPosts().catchError((e) {
-        debugPrint('인기작품 새로고침 오류 (무시): $e');
-        return <Post>[];
-      });
+      // 인기작품은 탭 진입 시에만 로드 (4-1 미리 로드 제거)
       
       // 공지사항 삭제 시 공지사항 목록도 새로고침
       if (post.type == 'notice') {
