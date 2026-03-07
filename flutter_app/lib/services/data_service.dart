@@ -427,6 +427,30 @@ class DataService extends ChangeNotifier {
 
   static const int _feedPageSize = 30;
 
+  /// 인기작품 선정 기준(좋아요 개수). 기본 20, Firestore config/app.popularLikeThreshold 로 변경 가능.
+  static const int defaultPopularLikeThreshold = 20;
+  int? _cachedPopularLikeThreshold;
+
+  Future<int> getPopularLikeThreshold() async {
+    if (_cachedPopularLikeThreshold != null) return _cachedPopularLikeThreshold!;
+    try {
+      final doc = await _firestore.collection('config').doc('app').get();
+      final v = doc.data()?['popularLikeThreshold'];
+      if (v is int && v > 0) {
+        _cachedPopularLikeThreshold = v;
+        return v;
+      }
+      if (v is num && v.toInt() > 0) {
+        _cachedPopularLikeThreshold = v.toInt();
+        return _cachedPopularLikeThreshold!;
+      }
+    } catch (e) {
+      debugPrint('인기작품 기준 Firestore 조회 오류 (기본값 사용): $e');
+    }
+    _cachedPopularLikeThreshold = defaultPopularLikeThreshold;
+    return defaultPopularLikeThreshold;
+  }
+
   void _sortPostsByFixedAndSortTime(List<Post> list) {
     final now = DateTime.now();
     DateTime? effectiveFixedUntil(Post p) {
@@ -628,19 +652,20 @@ class DataService extends ChangeNotifier {
       _isLoading = true;
       notifyListeners();
       
-      // 비용 절감: 최근 게시물만 가져오기 (200개 제한, 기존 기능 유지)
+      // 비용 절감: 최근 게시물만 가져와서 인기작품 선정 반영 (500개까지 검토)
       // 기존 프로그램과 동일하게: 좋아요 수 기준으로 필터링
       final snapshot = await _firestore
           .collection('posts')
           .orderBy('date', descending: true)
-          .limit(200) // 최근 200개만 가져와서 비용 절감
+          .limit(500) // 최근 500개에서 미선정 인기작품 보정 (표시는 limit 50개만)
           .get();
       
-      // 좋아요 2개 이상인 게시물만 필터링 (기존 프로그램과 동일)
+      final threshold = await getPopularLikeThreshold();
+      // 좋아요 threshold개 이상인 게시물만 인기작품 필터링 (기본 20, Firestore config/app.popularLikeThreshold 로 변경 가능)
       final allPosts = snapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
-      final popularPosts = allPosts.where((post) => post.likes.length >= 2).toList();
-      
-      // 기존 게시물 중 좋아요가 2개 이상인데 isPopular이 false인 경우:
+      final popularPosts = allPosts.where((post) => post.likes.length >= threshold).toList();
+
+      // 기존 게시물 중 좋아요가 threshold개 이상인데 isPopular이 false인 경우:
       // - 트랜잭션으로 "최초 1회만" 선정 처리 (popularRewarded로 중복 방지)
       int updateCount = 0;
       for (final post in popularPosts) {
@@ -664,8 +689,8 @@ class DataService extends ChangeNotifier {
               return <String, dynamic>{'selected': false};
             }
 
-            // 좋아요 조건 미달이면 스킵
-            if (likesCount < 2) {
+            // 좋아요 조건 미달이면 스킵 (threshold는 getPopularPosts 진입 시 이미 로드됨)
+            if (likesCount < threshold) {
               return <String, dynamic>{'selected': false};
             }
 
@@ -1074,9 +1099,10 @@ class DataService extends ChangeNotifier {
       }
       notifyListeners(); // UI 즉시 업데이트
       
-      // 좋아요가 2개 이상이면 인기작품 "최초 1회" 처리 시도 (트랜잭션, popularRewarded로 중복 방지)
+      final popularThreshold = await getPopularLikeThreshold();
+      // 좋아요가 기준 개수 이상이면 인기작품 "최초 1회" 처리 시도 (트랜잭션, popularRewarded로 중복 방지)
       final newLikesCount = updatedLikes.length;
-      if (newLikesCount >= 2 && !post.popularRewarded) {
+      if (newLikesCount >= popularThreshold && !post.popularRewarded) {
         try {
           final txResult = await _firestore.runTransaction((tx) async {
             final snap = await tx.get(postRef);
@@ -1087,7 +1113,7 @@ class DataService extends ChangeNotifier {
             final likesArr = (data['likes'] as List<dynamic>?) ?? const [];
             final likesCount = likesArr.length;
 
-            if (alreadyRewarded || likesCount < 2) {
+            if (alreadyRewarded || likesCount < popularThreshold) {
               return <String, dynamic>{'selected': false};
             }
 
@@ -3656,8 +3682,20 @@ class DataService extends ChangeNotifier {
           .where('authorUid', isEqualTo: userId)
           .get();
       
-      // 정확히 1개면 첫 업로드
+      // 정확히 1개면 첫 업로드 (단, 평생 1회만 보상)
       if (snapshot.docs.length == 1) {
+        // 이미 첫작품 미션 보상을 받은 적 있는지 coinHistory로 확인 (userMissions 삭제/불일치 시에도 중복 지급 방지)
+        final alreadyRewarded = await _firestore
+            .collection('coinHistory')
+            .where('userId', isEqualTo: userId)
+            .where('type', isEqualTo: 'mission_first_upload')
+            .limit(1)
+            .get();
+        if (alreadyRewarded.docs.isNotEmpty) {
+          debugPrint('ℹ️ 이미 첫 작품 업로드 미션 보상 수령함 (coinHistory 기준): $userId');
+          return;
+        }
+
         // 첫 작품 업로드 미션 찾기
         final firstUploadMission = _missions.firstWhere(
           (m) => m.type == 'first_upload',

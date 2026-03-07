@@ -23,6 +23,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   bool _isSelectionMode = false; // 선택 모드 여부
   Set<String> _selectedPostIds = {}; // 선택된 게시물 ID 목록
+  int _popularLikeThreshold = DataService.defaultPopularLikeThreshold; // 인기작품 기준 (Firestore config에서 로드)
 
   @override
   void initState() {
@@ -52,6 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       // Firestore에서 최신 게시물 목록 가져오기 (삭제된 게시물은 자동으로 제외됨)
       _allUserPosts = await dataService.getUserPosts(username);
+      _popularLikeThreshold = await dataService.getPopularLikeThreshold();
       setState(() => _isLoading = false);
     } catch (e) {
       debugPrint('사용자 게시물 로드 오류: $e');
@@ -520,7 +522,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             final currentPosts = _getCurrentPagePosts();
                             if (index >= currentPosts.length) return null;
                             final post = currentPosts[index];
-                            final isPopular = post.likes.length >= 2;
+                            final isPopular = post.likes.length >= _popularLikeThreshold;
                             
                             final isSelected = _selectedPostIds.contains(post.id);
                             return Stack(

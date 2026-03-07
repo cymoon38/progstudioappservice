@@ -21,6 +21,12 @@ service cloud.firestore {
         );
     }
 
+    // 앱 설정 (config) - 인기작품 기준 등. 읽기는 모두 허용, 수정은 관리자만
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null && isAdmin(request.auth.uid);
+    }
+
     // 게시물 (posts)
     match /posts/{postId} {
       // 읽기는 모든 사용자 허용 (로그인하지 않은 사용자도 작품 볼 수 있음)
