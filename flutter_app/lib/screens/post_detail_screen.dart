@@ -214,7 +214,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 표시할 좋아요 수 계산 (인기작품이 아니면 작성자 본인만 표시)
   int _getDisplayLikesCount(Post post, AuthService authService) {
     // 인기작품이면 모든 사용자에게 실제 좋아요 수 표시
-    if (post.isPopular) {
+    if (post.popularRewarded) {
       return post.likes.length;
     }
     
@@ -275,7 +275,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             views: _post!.views,
             type: _post!.type,
             originalPostId: _post!.originalPostId,
-            isPopular: _post!.isPopular,
+            isPopular: _post!.popularRewarded,
             popularDate: _post!.popularDate,
             popularRewarded: _post!.popularRewarded,
             coins: _post!.coins,
@@ -755,7 +755,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           views: _post!.views,
           type: _post!.type,
           originalPostId: _post!.originalPostId,
-          isPopular: _post!.isPopular,
+          isPopular: _post!.popularRewarded,
           popularDate: _post!.popularDate,
           popularRewarded: _post!.popularRewarded,
           coins: _post!.coins,
@@ -844,7 +844,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               views: _post!.views,
               type: _post!.type,
               originalPostId: _post!.originalPostId,
-              isPopular: _post!.isPopular,
+              isPopular: _post!.popularRewarded,
               popularDate: _post!.popularDate,
               popularRewarded: _post!.popularRewarded,
               coins: _post!.coins,
@@ -1628,6 +1628,18 @@ class _AdaptiveHeaderRow extends StatefulWidget {
 class _AdaptiveHeaderRowState extends State<_AdaptiveHeaderRow> {
   bool? _needsScroll;
   final GlobalKey _measureKey = GlobalKey();
+
+  @override
+  void didUpdateWidget(covariant _AdaptiveHeaderRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 댓글/대댓글이 채택되면서 헤더 내용 길이가 달라지면 다시 측정하도록 초기화
+    if (oldWidget.leftContent.length != widget.leftContent.length ||
+        oldWidget.dateWidget.runtimeType != widget.dateWidget.runtimeType) {
+      setState(() {
+        _needsScroll = null;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

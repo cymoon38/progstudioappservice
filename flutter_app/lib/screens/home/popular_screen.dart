@@ -18,11 +18,24 @@ class PopularScreen extends StatefulWidget {
 
 class _PopularScreenState extends State<PopularScreen> {
   final _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     // 인기작품은 탭 진입 시 HomeScreen에서 로드 (4-1 미리 로드 제거)
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    final dataService = Provider.of<DataService>(context, listen: false);
+    if (!dataService.hasMorePopularPosts ||
+        dataService.isLoadingMorePopular ||
+        dataService.popularPosts.isEmpty) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) {
+      dataService.loadMorePopularPosts();
+    }
   }
 
   void _handleSearch() {
@@ -34,6 +47,8 @@ class _PopularScreenState extends State<PopularScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -68,6 +83,7 @@ class _PopularScreenState extends State<PopularScreen> {
             return RefreshIndicator(
               onRefresh: () => dataService.getPopularPosts(),
               child: CustomScrollView(
+                controller: _scrollController,
                 physics: const ClampingScrollPhysics(), // CSS와 동일하게 스크롤 정지
                 slivers: [
                   // 헤더 (CSS: .popular-header)
@@ -277,7 +293,7 @@ class _PopularPostCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (post.isPopular)
+                    if (post.popularRewarded)
                       Image.asset(
                         'assets/icons/star.png',
                         width: 24,
@@ -316,8 +332,8 @@ class _PopularPostCard extends StatelessWidget {
                     // 좋아요 수 표시 (CSS: .like-count) - 인기작품 페이지는 모든 게시물이 인기작품이므로 항상 표시
                     Consumer<AuthService>(
                       builder: (context, authService, _) {
-                        // 인기작품 페이지는 모든 게시물이 인기작품이므로 항상 좋아요 수 표시
-                        final shouldShowLikes = post.isPopular;
+                        // 인기작품 페이지는 popularRewarded == true 인 게시물만 오므로 항상 좋아요 수 표시
+                        final shouldShowLikes = post.popularRewarded;
                         
                         return Row(
                           children: [

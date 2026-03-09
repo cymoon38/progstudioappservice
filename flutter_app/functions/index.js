@@ -133,6 +133,142 @@ exports.runDailyLottery = functions.pubsub
     }
   });
 
+// 인기작품 보상/표시 배치 (매일 새벽 5시, 지난 3일 동안 올라온 인기작품 후보 처리)
+exports.runDailyPopularRewards = functions.pubsub
+  .schedule('0 5 * * *')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    try {
+      console.log('🔥 인기작품 일괄 보상/표시 배치 시작 (KST 05:00)');
+
+      const now = new Date();
+      const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+      const startTs = admin.firestore.Timestamp.fromDate(threeDaysAgo);
+
+      // 지난 3일 동안 생성된, 아직 보상되지 않은 인기작품 후보
+      const snap = await db
+        .collection('posts')
+        .where('isPopular', '==', true)
+        .where('popularRewarded', '==', false)
+        .where('date', '>=', startTs)
+        .get();
+
+      console.log('대상 인기작품 후보 개수:', snap.size);
+
+      for (const doc of snap.docs) {
+        const data = doc.data();
+        const postId = doc.id;
+        const authorUid = (data.authorUid || '').trim();
+        const authorName = (data.author || '').trim();
+        const likes = Array.isArray(data.likes) ? data.likes : [];
+
+        console.log(`📌 처리 중: postId=${postId}, author=${authorUid || authorName}, likes=${likes.length}`);
+
+        // 이미 popularRewarded가 true인 문서는 스킵 (동시성 대비)
+        if (data.popularRewarded === true) {
+          console.log('  - 이미 popularRewarded=true, 스킵');
+          continue;
+        }
+
+        // 1) 좋아요 누른 사용자들 중 (작성자 제외) 최대 20명까지만 1코인 지급
+        const rewardedLikers = [];
+        for (const likerNameRaw of likes) {
+          if (!likerNameRaw || typeof likerNameRaw !== 'string') continue;
+          const likerName = likerNameRaw.trim();
+          if (!likerName) continue;
+          if (likerName === authorName) continue; // 작성자 제외
+          rewardedLikers.push(likerName);
+          if (rewardedLikers.length >= 20) break;
+        }
+
+        console.log(`  - 좋아요 보상 대상 수 (최대 20명): ${rewardedLikers.length}`);
+
+        for (const likerName of rewardedLikers) {
+          try {
+            const userSnap = await db
+              .collection('users')
+              .where('name', '==', likerName)
+              .limit(1)
+              .get();
+            if (userSnap.empty) {
+              console.log('  ⚠️ 좋아요 보상 대상 UID 없음:', likerName);
+              continue;
+            }
+            const likerUid = userSnap.docs[0].id;
+            await db.collection('users').doc(likerUid).update({
+              coins: admin.firestore.FieldValue.increment(1),
+            });
+            await db.collection('coinHistory').add({
+              userId: likerUid,
+              amount: 1,
+              type: '인기작품 선정 보상 (좋아요)',
+              postId,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            console.log('  ✅ 좋아요 보상 지급 완료:', likerName, likerUid);
+          } catch (err) {
+            console.error('  ❌ 좋아요 보상 지급 오류:', likerName, err);
+          }
+        }
+
+        // 2) 게시물 작성자에게 50코인 지급 (한 번만)
+        let authorUidFinal = authorUid;
+        if (!authorUidFinal && authorName) {
+          try {
+            const userSnap = await db
+              .collection('users')
+              .where('name', '==', authorName)
+              .limit(1)
+              .get();
+            if (!userSnap.empty) {
+              authorUidFinal = userSnap.docs[0].id;
+            }
+          } catch (err) {
+            console.error('  ❌ 작성자 UID 조회 오류:', authorName, err);
+          }
+        }
+
+        if (authorUidFinal) {
+          try {
+            await db.collection('users').doc(authorUidFinal).update({
+              coins: admin.firestore.FieldValue.increment(50),
+            });
+            await db.collection('coinHistory').add({
+              userId: authorUidFinal,
+              amount: 50,
+              type: '인기작품 선정 보상 (작성자)',
+              postId,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            console.log('  ✅ 작성자 보상 지급 완료:', authorUidFinal, authorName || '(이름 없음)');
+          } catch (err) {
+            console.error('  ❌ 작성자 보상 지급 오류:', authorUidFinal, err);
+          }
+        } else {
+          console.log('  ⚠️ 작성자 UID를 찾지 못해 보상을 지급하지 못했습니다:', authorName);
+        }
+
+        // 3) 게시물에 popularRewarded / popularRewardedAt, showInPopular 표시
+        try {
+          await db.collection('posts').doc(postId).update({
+            popularRewarded: true,
+            popularRewardedAt: admin.firestore.FieldValue.serverTimestamp(),
+            showInPopular: true,
+          });
+          console.log('  ✅ 인기작품 플래그 업데이트 완료:', postId);
+        } catch (err) {
+          console.error('  ❌ 인기작품 플래그 업데이트 오류:', postId, err);
+        }
+      }
+
+      console.log('✅ 인기작품 일괄 보상/표시 배치 완료');
+      return null;
+    } catch (error) {
+      console.error('❌ 인기작품 일괄 보상/표시 배치 오류:', error);
+      throw error;
+    }
+  });
+
 // 기프티콘 목록 조회
 exports.getGiftCardList = functions.https.onCall(async (data, context) => {
   try {

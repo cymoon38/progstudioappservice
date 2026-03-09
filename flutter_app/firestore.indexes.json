@@ -85,39 +85,24 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "type",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "date",
-          "order": "DESCENDING"
-        },
-        {
-          "fieldPath": "__name__",
-          "order": "DESCENDING"
-        }
-      ],
-      "density": "SPARSE_ALL"
-    },
-    {
-      "collectionGroup": "posts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
           "fieldPath": "isPopular",
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "popularRewarded",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "type",
           "order": "ASCENDING"
         },
         {
           "fieldPath": "date",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         },
         {
           "fieldPath": "__name__",
-          "order": "ASCENDING"
+          "order": "DESCENDING"
         }
       ],
       "density": "SPARSE_ALL"

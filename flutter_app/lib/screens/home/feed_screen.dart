@@ -1271,7 +1271,7 @@ class _PostCard extends StatelessWidget {
                     ),
                   ),
                   // 목탄/석탄 사용 시 100%채택 문구, 인기작품이면 불꽃은 그 아래 표시
-                  if (post.charcoalUsedAt != null || post.coalUsedAt != null || post.isPopular)
+                  if (post.charcoalUsedAt != null || post.coalUsedAt != null || post.popularRewarded)
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1285,7 +1285,7 @@ class _PostCard extends StatelessWidget {
                               color: AppTheme.primaryColor,
                             ),
                           ),
-                        if (post.isPopular) ...[
+                        if (post.popularRewarded) ...[
                           if (post.charcoalUsedAt != null) const SizedBox(height: 4),
                           Image.asset(
                             'assets/icons/star.png',
@@ -1328,7 +1328,7 @@ class _PostCard extends StatelessWidget {
                   // 인기작품이 아니면 작성자 본인만 좋아요 수 표시
                   final isPostOwner = authService.isLoggedIn && 
                       post.author == (authService.userData?['name'] as String? ?? '');
-                  final shouldShowLikes = post.isPopular || isPostOwner;
+                  final shouldShowLikes = post.popularRewarded || isPostOwner;
                   
                   return Row(
                     children: [

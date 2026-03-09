@@ -417,6 +417,9 @@ class DataService extends ChangeNotifier {
   DocumentSnapshot<Map<String, dynamic>>? _lastPostDoc;
   bool _hasMorePosts = true;
   bool _isLoadingMore = false;
+  DocumentSnapshot<Map<String, dynamic>>? _lastPopularPostDoc;
+  bool _hasMorePopularPosts = true;
+  bool _isLoadingMorePopular = false;
 
   List<Post> get posts => _posts;
   List<Post> get popularPosts => _popularPosts;
@@ -424,6 +427,8 @@ class DataService extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get hasMorePosts => _hasMorePosts;
   bool get isLoadingMore => _isLoadingMore;
+  bool get hasMorePopularPosts => _hasMorePopularPosts;
+  bool get isLoadingMorePopular => _isLoadingMorePopular;
 
   static const int _feedPageSize = 30;
 
@@ -544,6 +549,45 @@ class DataService extends ChangeNotifier {
     }
   }
 
+  Future<void> loadMorePopularPosts({int limit = 30}) async {
+    if (_isLoadingMorePopular || !_hasMorePopularPosts || _lastPopularPostDoc == null) return;
+    try {
+      _isLoadingMorePopular = true;
+      notifyListeners();
+
+      final snapshot = await _firestore
+          .collection('posts')
+          .where('isPopular', isEqualTo: true)
+          .where('popularRewarded', isEqualTo: true)
+          .orderBy('date', descending: true)
+          .startAfterDocument(_lastPopularPostDoc!)
+          .limit(limit)
+          .get();
+
+      final newPosts = snapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
+      final existingIds = _popularPosts.map((e) => e.id).toSet();
+      for (final p in newPosts) {
+        if (!existingIds.contains(p.id)) {
+          _popularPosts.add(p);
+          existingIds.add(p.id);
+        }
+      }
+
+      if (snapshot.docs.isNotEmpty) {
+        _lastPopularPostDoc = snapshot.docs.last;
+        _hasMorePopularPosts = snapshot.docs.length >= limit;
+      } else {
+        _hasMorePopularPosts = false;
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('인기작품 더 불러오기 오류: $e');
+    } finally {
+      _isLoadingMorePopular = false;
+      notifyListeners();
+    }
+  }
+
   /// 내가 쓴 게시물 목록 (아이템 사용 시 선택용). 인덱스 없이 동작하도록 최근 글을 가져온 뒤 authorUid/author로 필터.
   Future<List<Post>> getMyPosts(String userId, {int limit = 50}) async {
     try {
@@ -647,98 +691,28 @@ class DataService extends ChangeNotifier {
     }
   }
 
-  Future<List<Post>> getPopularPosts({int limit = 50}) async {
+  Future<List<Post>> getPopularPosts({int limit = 30}) async {
     try {
       _isLoading = true;
+      _lastPopularPostDoc = null;
+      _hasMorePopularPosts = true;
       notifyListeners();
       
-      // 비용 절감: 최근 게시물만 가져와서 인기작품 선정 반영 (500개까지 검토)
-      // 기존 프로그램과 동일하게: 좋아요 수 기준으로 필터링
       final snapshot = await _firestore
           .collection('posts')
+          .where('isPopular', isEqualTo: true)
+          .where('popularRewarded', isEqualTo: true)
           .orderBy('date', descending: true)
-          .limit(500) // 최근 500개에서 미선정 인기작품 보정 (표시는 limit 50개만)
+          .limit(limit)
           .get();
       
-      final threshold = await getPopularLikeThreshold();
-      // 좋아요 threshold개 이상인 게시물만 인기작품 필터링 (기본 20, Firestore config/app.popularLikeThreshold 로 변경 가능)
-      final allPosts = snapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
-      final popularPosts = allPosts.where((post) => post.likes.length >= threshold).toList();
-
-      // 기존 게시물 중 좋아요가 threshold개 이상인데 isPopular이 false인 경우:
-      // - 트랜잭션으로 "최초 1회만" 선정 처리 (popularRewarded로 중복 방지)
-      int updateCount = 0;
-      for (final post in popularPosts) {
-        if (post.isPopular) continue;
-        final postRef = _firestore.collection('posts').doc(post.id);
-
-        try {
-          final txResult = await _firestore.runTransaction((tx) async {
-            final snap = await tx.get(postRef);
-            if (!snap.exists) return <String, dynamic>{'selected': false};
-            final data = (snap.data() as Map<String, dynamic>?) ?? {};
-
-            final alreadyRewarded = data['popularRewarded'] == true;
-            final likesArr = (data['likes'] as List<dynamic>?) ?? const [];
-            final likesCount = likesArr.length;
-            final authorUid = data['authorUid']?.toString();
-            final authorName = data['author']?.toString();
-
-            // 이미 처리된 경우 스킵
-            if (alreadyRewarded) {
-              return <String, dynamic>{'selected': false};
-            }
-
-            // 좋아요 조건 미달이면 스킵 (threshold는 getPopularPosts 진입 시 이미 로드됨)
-            if (likesCount < threshold) {
-              return <String, dynamic>{'selected': false};
-            }
-
-            tx.update(postRef, {
-              // 이미 isPopular이 true여도, 보상/미션 처리가 안 된 "기존 인기작품"일 수 있어서
-              // popularRewarded를 기준으로 최초 1회만 처리한다.
-              'isPopular': true,
-              // popularDate가 없던 경우만 채워지게 되며, 기존 값이 있으면 덮어써도 무방(정합성에는 영향 없음)
-              'popularDate': FieldValue.serverTimestamp(),
-              'popularRewarded': true,
-              'popularRewardedAt': FieldValue.serverTimestamp(),
-            });
-
-            return <String, dynamic>{
-              'selected': true,
-              'authorUid': authorUid,
-              'author': authorName,
-            };
-          });
-
-          if (txResult['selected'] == true) {
-            updateCount++;
-            // 작성자 UID 확보 (authorUid가 없을 수 있어서 author로 fallback)
-            String? authorUid = txResult['authorUid']?.toString();
-            if (authorUid == null || authorUid.isEmpty) {
-              final authorName = txResult['author']?.toString();
-              if (authorName != null && authorName.isNotEmpty) {
-                authorUid = await getUserIdByUsername(authorName);
-              }
-            }
-
-          }
-        } catch (e) {
-          debugPrint('인기작품 트랜잭션 업데이트 오류 (무시): $e');
-        }
+      _popularPosts = snapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
+      if (snapshot.docs.isNotEmpty) {
+        _lastPopularPostDoc = snapshot.docs.last;
+        _hasMorePopularPosts = snapshot.docs.length >= limit;
+      } else {
+        _hasMorePopularPosts = false;
       }
-
-      if (updateCount > 0) {
-        debugPrint('✅ 기존 게시물 ${updateCount}개를 인기작품으로 선정했습니다. (트랜잭션, 중복 방지)');
-      }
-      
-      // 좋아요 수 기준으로 정렬 (기존 프로그램과 동일)
-      popularPosts.sort((a, b) {
-        final likesDiff = b.likes.length - a.likes.length;
-        return likesDiff != 0 ? likesDiff : b.date.compareTo(a.date);
-      });
-      
-      _popularPosts = popularPosts.take(limit).toList();
       notifyListeners();
       return _popularPosts;
     } catch (e) {
@@ -1100,28 +1074,26 @@ class DataService extends ChangeNotifier {
       notifyListeners(); // UI 즉시 업데이트
       
       final popularThreshold = await getPopularLikeThreshold();
-      // 좋아요가 기준 개수 이상이면 인기작품 "최초 1회" 처리 시도 (트랜잭션, popularRewarded로 중복 방지)
+      // 좋아요가 기준 개수 이상이면 인기작품 "후보"로만 표시 (보상/최종 확정은 매일 새벽 배치에서 처리)
       final newLikesCount = updatedLikes.length;
-      if (newLikesCount >= popularThreshold && !post.popularRewarded) {
+      if (newLikesCount >= popularThreshold && !post.isPopular) {
         try {
           final txResult = await _firestore.runTransaction((tx) async {
             final snap = await tx.get(postRef);
             if (!snap.exists) return <String, dynamic>{'selected': false};
             final data = (snap.data() as Map<String, dynamic>?) ?? {};
 
-            final alreadyRewarded = data['popularRewarded'] == true;
             final likesArr = (data['likes'] as List<dynamic>?) ?? const [];
             final likesCount = likesArr.length;
 
-            if (alreadyRewarded || likesCount < popularThreshold) {
+            if (likesCount < popularThreshold) {
               return <String, dynamic>{'selected': false};
             }
 
             tx.update(postRef, {
               'isPopular': true,
               'popularDate': FieldValue.serverTimestamp(),
-              'popularRewarded': true,
-              'popularRewardedAt': FieldValue.serverTimestamp(),
+              // popularRewarded / popularRewardedAt 는 매일 새벽 5시 배치에서 설정
             });
 
             return <String, dynamic>{
@@ -1175,7 +1147,8 @@ class DataService extends ChangeNotifier {
             coalUsedAt: updatedPost.coalUsedAt,
             coalFixedUntil: updatedPost.coalFixedUntil,
             coalAdoptionDone: updatedPost.coalAdoptionDone,
-            popularRewarded: true,
+            // 보상은 아직 지급되지 않음 (배치에서 처리)
+            popularRewarded: false,
             coins: updatedPost.coins,
             sortTime: updatedPost.sortTime,
           );
@@ -1188,74 +1161,7 @@ class DataService extends ChangeNotifier {
             _popularPosts[popIdx] = popularPost;
           }
           notifyListeners();
-          
-          // 코인 지급 (기존 프로그램과 동일)
-          try {
-            debugPrint('🎉 인기작품 선정! 코인 지급 시작...');
-            final authorName = authorNameFromTx ?? updatedPost.author;
-            final likers = updatedPost.likes;
-            
-            // 좋아요를 누른 사람들에게 1코인씩 지급 (글쓴이 본인 제외)
-            debugPrint('💰 좋아요 누른 사용자들에게 코인 지급 시작...');
-            for (final likerUsername in likers) {
-              // 글쓴이 본인은 좋아요 보상에서 제외
-              if (likerUsername == authorName) {
-                debugPrint('ℹ️ 글쓴이 본인 ($likerUsername)은 좋아요 보상에서 제외됩니다.');
-                continue;
-              }
-              
-              try {
-                final likerUid = await getUserIdByUsername(likerUsername);
-                if (likerUid != null) {
-                  await addCoins(
-                    userId: likerUid,
-                    amount: 1,
-                    type: '인기작품 선정 보상 (좋아요)',
-                    postId: postId,
-                  );
-                  debugPrint('✅ 코인 지급 완료: $likerUsername ($likerUid)');
-      } else {
-                  debugPrint('⚠️ UID를 찾을 수 없음: $likerUsername');
-                }
-              } catch (e) {
-                debugPrint('❌ 좋아요 누른 사용자 코인 지급 오류 ($likerUsername): $e');
-              }
-            }
-            
-            // 글쓴이에게 50코인 지급
-            debugPrint('💰 글쓴이에게 코인 지급 시작...');
-            String? authorUidForCoins = authorUidFromTx;
-            
-            // authorUid가 여전히 없으면 사용자명으로 찾기
-            if (authorUidForCoins == null || authorUidForCoins.isEmpty) {
-              authorUidForCoins = await getUserIdByUsername(authorName);
-              debugPrint('🔍 authorUid가 없어 이름으로 찾음: $authorName -> $authorUidForCoins');
-            }
-            
-            if (authorUidForCoins != null && authorUidForCoins.isNotEmpty) {
-              try {
-                await addCoins(
-                  userId: authorUidForCoins,
-                  amount: 50,
-                  type: '인기작품 선정 보상 (작성자)',
-                  postId: postId,
-                );
-                debugPrint('✅ 글쓴이 코인 지급 완료: $authorUidForCoins ($authorName)');
-              } catch (e) {
-                debugPrint('❌ 글쓴이 코인 지급 오류: $e');
-              }
-              // 인기작품 한 번 선정 되기 미션: 참가 후 선정되면 1000코인 완료
-              _checkAndCompletePopularOnceMission(authorUidForCoins).catchError((e) {
-                debugPrint('인기작품 미션 체크 오류 (무시): $e');
-              });
-            } else {
-              debugPrint('❌ 글쓴이 UID를 찾을 수 없어 코인을 지급할 수 없음: $authorName');
-            }
-            
-            debugPrint('✅ 인기작품 코인 지급 완료');
-          } catch (e) {
-            debugPrint('❌ 인기작품 코인 지급 오류: $e');
-          }
+          // 코인 지급은 매일 새벽 5시에 Cloud Functions 배치에서 처리
         } catch (e) {
           debugPrint('인기작품 최초 처리 트랜잭션 오류 (무시): $e');
         }
