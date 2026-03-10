@@ -195,7 +195,7 @@ class AuthService extends ChangeNotifier {
     return id;
   }
 
-  /// 기기당 회원가입 가능 여부 (탈퇴 포함 최대 2개까지, 2개 모두 탈퇴 시 다시 2개 가능)
+  /// 기기당 회원가입 가능 여부 (해당 기기에서 평생 최대 2개까지 가입 가능, 탈퇴해도 count는 줄어들지 않음)
   Future<bool> canSignUpFromDevice() async {
     final deviceId = await getDeviceId();
     final doc = await _firestore.collection('deviceRegistrations').doc(deviceId).get();
@@ -211,18 +211,13 @@ class AuthService extends ChangeNotifier {
     await ref.set({'count': FieldValue.increment(1)}, SetOptions(merge: true));
   }
 
-  /// 탈퇴 시 기기 count 감소 (2개 모두 탈퇴한 기기는 다시 2개 가입 가능)
+  /// 탈퇴 시에도 deviceRegistrations count는 줄이지 않음.
+  /// 한 기기에서 한 번 count가 증가한 회원가입은 영구적으로 카운트에 남도록 하여,
+  /// 2개 모두 탈퇴해도 해당 기기로는 더 이상 재가입할 수 없게 만든다.
   Future<void> _decrementDeviceSignupCount(String deviceId) async {
-    if (deviceId.isEmpty) return;
-    final ref = _firestore.collection('deviceRegistrations').doc(deviceId);
-    final doc = await ref.get();
-    if (!doc.exists) return;
-    final data = doc.data();
-    final count = (data?['count'] is int)
-        ? (data!['count'] as int)
-        : ((data?['count'] as num?)?.toInt() ?? 0);
-    if (count <= 0) return;
-    await ref.set({'count': FieldValue.increment(-1)}, SetOptions(merge: true));
+    // 의도적으로 비워 둠.
+    // 기존에 count를 감소시키던 로직은 제거하여, 기기별 가입 횟수를 되돌릴 수 없게 유지한다.
+    return;
   }
 
   /// 이메일 중복 확인 (회원가입 전 호출)

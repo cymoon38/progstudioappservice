@@ -1,12 +1,13 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import '../../services/data_service.dart';
+
 import '../../services/auth_service.dart';
+import '../../services/data_service.dart';
 import '../../theme/app_theme.dart';
-import '../post_detail_screen.dart';
-import '../auth/welcome_screen.dart';
 import '../../widgets/app_profile_icon.dart';
+import '../auth/welcome_screen.dart';
+import '../post_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -756,6 +757,95 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                       ),
+                    ),
+                  ),
+                  // 사업자 정보 (마이페이지 하단)
+                  SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: Color(0xFFE0E3EE),
+                        ),
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '사업자 정보',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '상호명: 프록 스튜디오',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.5,
+                                  color: AppTheme.textTertiary,
+                                ),
+                              ),
+                              Text(
+                                '사업자등록번호: 388-53-01171',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.5,
+                                  color: AppTheme.textTertiary,
+                                ),
+                              ),
+                              Text(
+                                '대표자: 문치연 ',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.5,
+                                  color: AppTheme.textTertiary,
+                                ),
+                              ),
+                              Text(
+                                '주소: 서울특별시 서초구 서초중앙로24길 43, 102동 1708호',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.5,
+                                  color: AppTheme.textTertiary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '개인정보보호책임자: 문치연',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.5,
+                                  color: AppTheme.textTertiary,
+                                ),
+                              ),
+                              Text(
+                                '고객센터 이메일: progstudio38@gmail.com',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.5,
+                                  color: AppTheme.textTertiary,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Copyright © 2026 progstudio. All rights reserved.',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textTertiary.withOpacity(0.8),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

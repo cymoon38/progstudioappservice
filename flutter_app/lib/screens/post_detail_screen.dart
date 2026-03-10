@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/data_service.dart';
 import '../services/viewed_posts_service.dart';
+import 'post_detail_daily_like_dialog.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_profile_icon.dart';
 import '../widgets/ban_dialog.dart';
@@ -240,74 +241,82 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     if (_post == null) return;
+    
+    final dataService = Provider.of<DataService>(context, listen: false);
+    final username = authService.userData?['name'] as String? ?? 
+        authService.user!.displayName ?? '익명';
+    
+    final isLiked = _post!.likes.contains(username);
+    
+    // 이미 좋아요를 눌렀다면 취소 불가 (일반 게시물 포함)
+    if (isLiked) {
+      return; // 알림 없이 그냥 반환
+    }
+
+    // 현재 상태 백업 (실패 시 롤백용)
+    final previousPost = _post!;
+
+    // 즉시 UI 업데이트 (네트워크 요청 전에)
+    final updatedLikes = List<String>.from(previousPost.likes);
+    updatedLikes.add(username);
+    
+    if (mounted) {
+      setState(() {
+        _post = Post(
+          id: previousPost.id,
+          author: previousPost.author,
+          authorUid: previousPost.authorUid,
+          title: previousPost.title,
+          caption: previousPost.caption,
+          imageUrl: previousPost.imageUrl,
+          originalImageUrl: previousPost.originalImageUrl,
+          compressedImageUrl: previousPost.compressedImageUrl,
+          tags: previousPost.tags,
+          likes: updatedLikes,
+          comments: previousPost.comments,
+          date: previousPost.date,
+          views: previousPost.views,
+          type: previousPost.type,
+          originalPostId: previousPost.originalPostId,
+          isPopular: previousPost.popularRewarded,
+          popularDate: previousPost.popularDate,
+          popularRewarded: previousPost.popularRewarded,
+          coins: previousPost.coins,
+          sortTime: previousPost.sortTime,
+          charcoalUsedAt: previousPost.charcoalUsedAt,
+          charcoalFixedUntil: previousPost.charcoalFixedUntil,
+          charcoalAdoptionDone: previousPost.charcoalAdoptionDone,
+          coalUsedAt: previousPost.coalUsedAt,
+          coalFixedUntil: previousPost.coalFixedUntil,
+          coalAdoptionDone: previousPost.coalAdoptionDone,
+        );
+      });
+    }
 
     try {
-      final dataService = Provider.of<DataService>(context, listen: false);
-      final username = authService.userData?['name'] as String? ?? 
-          authService.user!.displayName ?? '익명';
-      
-      final isLiked = _post!.likes.contains(username);
-      
-      // 이미 좋아요를 눌렀다면 취소 불가 (일반 게시물 포함)
-      if (isLiked) {
-        return; // 알림 없이 그냥 반환
-      }
-      
-      // 즉시 UI 업데이트 (네트워크 요청 전에)
-      final updatedLikes = List<String>.from(_post!.likes);
-      updatedLikes.add(username);
-      
-      if (mounted) {
-        setState(() {
-          _post = Post(
-            id: _post!.id,
-            author: _post!.author,
-            authorUid: _post!.authorUid,
-            title: _post!.title,
-            caption: _post!.caption,
-            imageUrl: _post!.imageUrl,
-            originalImageUrl: _post!.originalImageUrl,
-            compressedImageUrl: _post!.compressedImageUrl,
-            tags: _post!.tags,
-            likes: updatedLikes,
-            comments: _post!.comments,
-            date: _post!.date,
-            views: _post!.views,
-            type: _post!.type,
-            originalPostId: _post!.originalPostId,
-            isPopular: _post!.popularRewarded,
-            popularDate: _post!.popularDate,
-            popularRewarded: _post!.popularRewarded,
-            coins: _post!.coins,
-            sortTime: _post!.sortTime,
-            charcoalUsedAt: _post!.charcoalUsedAt,
-            charcoalFixedUntil: _post!.charcoalFixedUntil,
-            charcoalAdoptionDone: _post!.charcoalAdoptionDone,
-            coalUsedAt: _post!.coalUsedAt,
-            coalFixedUntil: _post!.coalFixedUntil,
-            coalAdoptionDone: _post!.coalAdoptionDone,
-          );
-        });
-      }
-      
-      // 백그라운드에서 Firestore 업데이트 (블로킹하지 않음)
-      dataService.toggleLike(
+      await dataService.toggleLike(
         widget.postId, 
         authService.user!.uid,
         username,
-      ).catchError((e) {
-        debugPrint('좋아요 업데이트 오류 (무시): $e');
-        // 오류 발생 시 원래 상태로 복구
-        if (mounted) {
-          setState(() {
-            _post = _post; // 원래 상태 유지
-          });
-        }
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('좋아요 처리 실패: $e')),
       );
+    } on DailyLikeLimitException {
+      // 일일 좋아요 한도 초과: UI 롤백 후 안내 다이얼로그 표시
+      if (mounted) {
+        setState(() {
+          _post = previousPost;
+        });
+        await showDailyLikeLimitDialog(context);
+      }
+    } catch (e) {
+      debugPrint('좋아요 처리 실패: $e');
+      if (mounted) {
+        setState(() {
+          _post = previousPost;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('좋아요 처리 실패: $e')),
+        );
+      }
     }
   }
 

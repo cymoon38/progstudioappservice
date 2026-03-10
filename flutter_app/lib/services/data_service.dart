@@ -12,6 +12,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'lottery_service.dart';
 
+/// 일일 좋아요 한도(20개)를 초과했을 때 throw하는 예외.
+class DailyLikeLimitException implements Exception {
+  final String message;
+  DailyLikeLimitException([this.message = 'daily_like_limit_exceeded']);
+
+  @override
+  String toString() => message;
+}
+
 class Post {
   final String id;
   final String author;
@@ -946,6 +955,9 @@ class DataService extends ChangeNotifier {
   // 좋아요 토글 (기존 프로그램과 동일: username 기반, 인기작품 체크, 알림 생성)
   Future<void> toggleLike(String postId, String userId, String username) async {
     try {
+      // 일일 좋아요 한도(20개) 체크 및 증가
+      await _checkAndIncrementDailyLikeQuota(userId);
+
       final postRef = _firestore.collection('posts').doc(postId);
       
       // 로컬에서 게시물 찾기
@@ -1224,6 +1236,50 @@ class DataService extends ChangeNotifier {
       debugPrint('좋아요 토글 오류: $e');
       rethrow;
     }
+  }
+
+  /// 현재 날짜 기준으로 사용자별 일일 좋아요 한도를 체크하고, 1 증가시킨다.
+  /// - (테스트용) 하루 최대 3개까지 허용
+  /// - 초과 시 [DailyLikeLimitException]을 throw한다.
+  Future<void> _checkAndIncrementDailyLikeQuota(String userId) async {
+    if (userId.isEmpty) {
+      throw DailyLikeLimitException();
+    }
+    final userRef = _firestore.collection('users').doc(userId);
+
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(userRef);
+      if (!snap.exists) {
+        throw DailyLikeLimitException();
+      }
+      final data = (snap.data() as Map<String, dynamic>?) ?? {};
+
+      final Timestamp? ts = data['likeLimitDate'] as Timestamp?;
+      final int currentCount = (data['likeLimitCount'] is int)
+          ? data['likeLimitCount'] as int
+          : ((data['likeLimitCount'] as num?)?.toInt() ?? 0);
+
+      final now = DateTime.now();
+      bool isSameDay = false;
+      if (ts != null) {
+        final d = ts.toDate();
+        isSameDay = (d.year == now.year && d.month == now.month && d.day == now.day);
+      }
+
+      if (isSameDay) {
+        if (currentCount >= 3) {
+          throw DailyLikeLimitException();
+        }
+        tx.update(userRef, {
+          'likeLimitCount': currentCount + 1,
+        });
+      } else {
+        tx.update(userRef, {
+          'likeLimitDate': Timestamp.fromDate(now),
+          'likeLimitCount': 1,
+        });
+      }
+    });
   }
 
   Future<void> addComment(String postId, String userId, String username, String text) async {

@@ -145,11 +145,10 @@ exports.runDailyPopularRewards = functions.pubsub
       const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
       const startTs = admin.firestore.Timestamp.fromDate(threeDaysAgo);
 
-      // 지난 3일 동안 생성된, 아직 보상되지 않은 인기작품 후보
+      // 지난 3일 동안 생성된 인기작품 후보 (보상 여부는 문서 안에서 다시 확인)
       const snap = await db
         .collection('posts')
         .where('isPopular', '==', true)
-        .where('popularRewarded', '==', false)
         .where('date', '>=', startTs)
         .get();
 

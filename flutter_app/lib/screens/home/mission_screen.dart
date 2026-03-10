@@ -1108,7 +1108,11 @@ class _MissionCard extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(left: 20), // 제목만 왼쪽 패딩
                         child: Text(
-                          mission.type == 'popular_once' ? '인기작품 선정되기' : mission.title,
+                          mission.type == 'popular_once'
+                              ? '인기작품 선정되기'
+                              : mission.type == 'like_click'
+                                  ? '좋아요 누르기'
+                                  : mission.title,
                           style: const TextStyle(
                             fontSize: 16, // 1rem
                             fontWeight: FontWeight.w600,
